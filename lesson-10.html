@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 10 — MVC Controllers: Producing Results | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 10 — MVC Controllers: Producing Results</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Sự khác biệt giữa MVC Controller và Minimal API khi trả kết quả</a></li>
+      <li><a href="#s2">2. ContentResult — Trả về nội dung văn bản / HTML</a></li>
+      <li><a href="#s3">3. JsonResult — Ép kiểu kết quả về JSON</a></li>
+      <li><a href="#s4">4. File Results — Trả về file từ server</a></li>
+      <li><a href="#s5">5. Redirect Results — Chuyển hướng người dùng</a></li>
+      <li><a href="#s6">6. Bài tập 6 — Xây dựng CRUD UI cho Departments</a></li>
+      <li><a href="#s7">7. Đáp án Bài tập 6 — CRUD UI hoàn chỉnh</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 10</span>
+      <h1>MVC Controllers — Producing Results</h1>
+      <p class="lead">Khám phá các kiểu kết quả mà MVC Controller có thể trả về — ContentResult, JsonResult, File Results, Redirect Results — và xây dựng giao diện CRUD hoàn chỉnh cho Departments bằng ContentResult thuần HTML.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Sự khác biệt giữa MVC Controller và Minimal API khi trả kết quả</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Main differences in MVC controllers</em></p>
+
+      <p>Trong phần Minimal API chúng ta đã học về việc trả kết quả — <code>NotFoundResult</code>, <code>OkResult</code>, các status-code result… Những khái niệm đó vẫn áp dụng được trong MVC Controller. Tuy nhiên, <strong>MVC Controller chủ yếu được dùng để xây dựng giao diện người dùng (UI)</strong>, nên kiểu kết quả <em>quan trọng nhất và thường gặp nhất</em> là <strong>ViewResult</strong> — kết quả HTML được sinh ra từ Razor View.</p>
+
+      <h3>Bức tranh tổng quan các kiểu kết quả trong MVC Controller</h3>
+      <table class="tbl">
+        <tr><th>Kiểu kết quả</th><th>Lớp / Helper</th><th>Khi nào dùng</th></tr>
+        <tr>
+          <td><strong>ViewResult</strong></td>
+          <td><code>View()</code></td>
+          <td>Trả về trang HTML từ file <code>.cshtml</code> (Razor View). Đây là kết quả chính trong MVC UI.</td>
+        </tr>
+        <tr>
+          <td><strong>ContentResult</strong></td>
+          <td><code>Content(...)</code></td>
+          <td>Trả về chuỗi văn bản thuần hoặc HTML tự tạo, có thể chỉ định <code>Content-Type</code>.</td>
+        </tr>
+        <tr>
+          <td><strong>JsonResult</strong></td>
+          <td><code>Json(...)</code></td>
+          <td>Buộc kết quả trả về là JSON bất kể <code>Accept</code> header của client.</td>
+        </tr>
+        <tr>
+          <td><strong>FileResult</strong></td>
+          <td><code>File(...)</code> / <code>PhysicalFile(...)</code></td>
+          <td>Trả về nội dung file để hiển thị hoặc tải xuống trong trình duyệt.</td>
+        </tr>
+        <tr>
+          <td><strong>RedirectResult</strong></td>
+          <td><code>RedirectToAction(...)</code> / <code>LocalRedirect(...)</code> / <code>Redirect(...)</code></td>
+          <td>Chuyển hướng người dùng đến action khác, URL nội bộ, hoặc URL bên ngoài.</td>
+        </tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <strong>ViewResult sẽ được học ở chương tiếp theo</strong> khi chúng ta nghiên cứu Razor Views. Trong chương này chúng ta tập trung vào bốn kiểu còn lại: ContentResult, JsonResult, FileResult và RedirectResult.</p>
+      </div>
+
+      <h3>Tất cả đều implement IActionResult</h3>
+      <p>Mọi kiểu kết quả trong MVC đều implement interface <code>IActionResult</code> (hoặc kế thừa <code>ActionResult</code> đã implement nó). Vì vậy kiểu trả về phổ biến nhất của một action method là:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public IActionResult Index()
+{
+    // Có thể trả bất kỳ kiểu kết quả nào
+    return Content("Hello from MVC!");
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> ContentResult — Trả về nội dung văn bản / HTML</h2>
+      <p class="subvideo-meta">Bài 2 · <em>ContentResult</em></p>
+
+      <p><strong>ContentResult</strong> là kiểu kết quả dùng để trả về một chuỗi văn bản bất kỳ — có thể là plain text, HTML, hay thậm chí JSON — kèm theo <code>Content-Type</code> tùy chọn. Đây là cách đơn giản nhất để tạo nội dung giao diện thủ công mà chưa cần Razor View.</p>
+
+      <h3>Cách khởi tạo trực tiếp (instantiate)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public IActionResult Index()
+{
+    // Khởi tạo ContentResult thủ công
+    return new ContentResult()
+    {
+        Content = "&lt;h1&gt;Welcome to the Homepage&lt;/h1&gt;",
+        ContentType = "text/html"
+    };
+}</code></pre>
+      </div>
+
+      <h3>Dùng helper method Content() — cách ngắn gọn hơn</h3>
+      <p>Controller có sẵn phương thức trợ giúp <code>Content()</code> để tạo <code>ContentResult</code> nhanh hơn:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Trả về plain text (Content-Type mặc định: text/plain)
+public IActionResult PlainText()
+{
+    return Content("Hello, World!");
+}
+
+// Trả về HTML
+public IActionResult HtmlPage()
+{
+    return Content("&lt;h1&gt;Welcome&lt;/h1&gt;&lt;p&gt;This is a paragraph.&lt;/p&gt;", "text/html");
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> <strong>Helper method vs. khởi tạo thủ công:</strong> Kết quả hoàn toàn tương đương. Hầu hết lập trình viên dùng <code>Content(...)</code> vì ngắn gọn hơn. Trong Minimal API, helper tương đương nằm trong class <code>Results</code>; trong MVC Controller, helper nằm ngay trong class <code>Controller</code> nên bạn dùng trực tiếp không cần viết tên class.</p>
+      </div>
+
+      <h3>Lưu ý về Content-Type</h3>
+      <table class="tbl">
+        <tr><th>Content-Type</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>text/plain</code></td><td>Trình duyệt hiển thị như văn bản thuần; thẻ HTML không được diễn giải.</td></tr>
+        <tr><td><code>text/html</code></td><td>Trình duyệt diễn giải và render HTML đầy đủ.</td></tr>
+        <tr><td><code>application/json</code></td><td>Trả JSON; tuy nhiên nên dùng <code>JsonResult</code> thay thế.</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> JsonResult — Ép kiểu kết quả về JSON</h2>
+      <p class="subvideo-meta">Bài 3 · <em>JsonResult</em></p>
+
+      <p>Nếu bạn trả về một <strong>object</strong> từ action method với kiểu trả về là <code>IActionResult</code>, ASP.NET Core sẽ dùng <em>Content Negotiation</em> (thương lượng nội dung) để quyết định format. Khi client gửi header <code>Accept: application/xml</code>, server sẽ trả XML thay vì JSON — nếu Output Formatter XML đã được cài đặt.</p>
+
+      <h3>Vấn đề: Content Negotiation không phải lúc nào cũng mong muốn</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Nếu client gửi Accept: application/xml,
+// action này có thể trả XML thay vì JSON!
+public IActionResult GetDepartment()
+{
+    return Ok(new Department(1, "Sales", "Sales Department"));
+}</code></pre>
+      </div>
+
+      <h3>Giải pháp: dùng JsonResult để luôn trả JSON</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Khởi tạo JsonResult thủ công
+public IActionResult GetDepartmentJson()
+{
+    var dept = new Department(1, "Sales", "Sales Department");
+    return new JsonResult(dept);
+}
+
+// Hoặc dùng helper method Json() — ngắn gọn hơn
+public IActionResult GetDepartmentJsonHelper()
+{
+    var dept = new Department(1, "Sales", "Sales Department");
+    return Json(dept);   // Luôn trả JSON bất kể Accept header
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span> <strong>JsonResult bỏ qua Content Negotiation.</strong> Kể cả khi client yêu cầu XML qua header <code>Accept: application/xml</code>, server vẫn trả JSON và đặt <code>Content-Type: application/json</code> trong response. Đây là hành vi cố ý khi bạn muốn đảm bảo format JSON.</p>
+      </div>
+
+      <h3>JsonResult với tùy chỉnh serializer</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public IActionResult GetDepartmentCustomJson()
+{
+    var dept = new Department(1, "Engineering", "Engineering Department");
+
+    // Overload thứ hai cho phép cấu hình JsonSerializerOptions
+    return Json(dept, new System.Text.Json.JsonSerializerOptions
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    });
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Trong thực tế, <strong>MVC Controller xây dựng UI không thường dùng JsonResult</strong> vì Controller UI trả View. JsonResult phổ biến hơn ở Controller API. Nhưng hiểu cơ chế này rất quan trọng để biết khi nào cần ép buộc format JSON.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> File Results — Trả về file từ server</h2>
+      <p class="subvideo-meta">Bài 4 · <em>File Results</em></p>
+
+      <p>Đôi khi ứng dụng web cần cho phép người dùng xem hoặc tải xuống một file — PDF, hình ảnh, tài liệu… ASP.NET Core MVC cung cấp <strong>ba loại File Result</strong> tùy vào nguồn gốc của file.</p>
+
+      <table class="tbl">
+        <tr><th>Loại</th><th>Lớp</th><th>Nguồn file</th></tr>
+        <tr>
+          <td><span class="tag">Virtual</span></td>
+          <td><code>VirtualFileResult</code></td>
+          <td>File nằm trong thư mục <code>wwwroot</code> (đường dẫn tương đối từ <code>wwwroot</code>).</td>
+        </tr>
+        <tr>
+          <td><span class="tag">Physical</span></td>
+          <td><code>PhysicalFileResult</code></td>
+          <td>File nằm bất kỳ đâu trên đĩa cứng server (đường dẫn tuyệt đối).</td>
+        </tr>
+        <tr>
+          <td><span class="tag">Content</span></td>
+          <td><code>FileContentResult</code></td>
+          <td>Nội dung file đã được nạp vào bộ nhớ dưới dạng <code>byte[]</code> (thường lấy từ database hoặc remote API).</td>
+        </tr>
+      </table>
+
+      <h3>1. VirtualFileResult — file trong wwwroot</h3>
+      <p>Cần có thư mục <code>wwwroot</code> và file <code>readme.txt</code> bên trong. Lưu ý: cách này <em>không cần</em> cấu hình Static Files Middleware — file được trả về qua action endpoint.</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[Route("/download_vf")]
+public IActionResult ReturnVirtualFile()
+{
+    // Đường dẫn tương đối từ wwwroot
+    // Helper File() tạo VirtualFileResult
+    return File("/readme.txt", "text/plain");
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Nếu bạn truy cập <code>/readme.txt</code> trực tiếp (không qua action), Static Files Middleware mới phục vụ file đó. Action <code>/download_vf</code> ở đây hoạt động <strong>độc lập</strong> với middleware đó.</p>
+      </div>
+
+      <h3>2. PhysicalFileResult — file ở đường dẫn tuyệt đối</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[Route("/download_pf")]
+public IActionResult ReturnPhysicalFile()
+{
+    // Đường dẫn tuyệt đối trên máy chủ
+    return PhysicalFile(@"c:\temp\sample.pdf", "application/pdf");
+}</code></pre>
+      </div>
+
+      <h3>3. FileContentResult — từ byte array trong bộ nhớ</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[Route("/download_cf")]
+public IActionResult ReturnContentFile()
+{
+    // Đọc toàn bộ file vào byte[] (thực tế có thể lấy từ DB)
+    byte[] bytes = System.IO.File.ReadAllBytes(@"c:\temp\sample.pdf");
+
+    return File(bytes, "application/pdf");
+}</code></pre>
+      </div>
+
+      <h3>Hiển thị trong trình duyệt vs. Tải xuống</h3>
+      <p>Hành vi của trình duyệt phụ thuộc vào <strong>MIME type</strong>:</p>
+      <ul>
+        <li><code>application/pdf</code>, <code>text/plain</code>, <code>image/png</code>… → trình duyệt <em>mở trực tiếp</em> trong tab.</li>
+        <li><code>application/octet-stream</code> → trình duyệt <em>tải xuống</em> vì không biết cách mở.</li>
+      </ul>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[Route("/force_download")]
+public IActionResult ForceDownload()
+{
+    byte[] bytes = System.IO.File.ReadAllBytes(@"c:\temp\sample.pdf");
+
+    // application/octet-stream buộc trình duyệt tải xuống
+    return File(bytes, "application/octet-stream", "report.pdf");
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Tham số thứ ba của <code>File()</code> là <code>fileDownloadName</code> — tên file mà người dùng thấy khi tải xuống. Nếu bỏ qua, trình duyệt tự đặt tên.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Redirect Results — Chuyển hướng người dùng</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Redirect Results</em></p>
+
+      <p>Trong ứng dụng web có UI, sau khi xử lý một form (thêm, sửa, xóa dữ liệu), thông lệ tốt là <strong>chuyển hướng</strong> người dùng đến trang khác thay vì render nội dung ngay lập tức. Điều này tránh vấn đề "submit lại form khi refresh" (Post/Redirect/Get pattern). ASP.NET Core MVC cung cấp ba loại redirect result.</p>
+
+      <h3>Tổng quan ba loại Redirect Result</h3>
+      <table class="tbl">
+        <tr><th>Loại</th><th>Lớp / Helper</th><th>Mô tả</th></tr>
+        <tr>
+          <td><strong>RedirectToActionResult</strong></td>
+          <td><code>RedirectToAction()</code></td>
+          <td>Chuyển hướng đến action method khác (cùng hoặc khác controller). Cách được ưa dùng nhất trong MVC UI.</td>
+        </tr>
+        <tr>
+          <td><strong>LocalRedirectResult</strong></td>
+          <td><code>LocalRedirect()</code></td>
+          <td>Chuyển hướng đến URL nội bộ (cùng ứng dụng) được chỉ định trực tiếp bằng chuỗi.</td>
+        </tr>
+        <tr>
+          <td><strong>RedirectResult</strong></td>
+          <td><code>Redirect()</code></td>
+          <td>Chuyển hướng đến URL bất kỳ, kể cả URL bên ngoài ứng dụng (vd: google.com).</td>
+        </tr>
+      </table>
+
+      <h3>1. RedirectToAction — cách ưa dùng</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Details(int id)
+{
+    // ... logic xử lý ...
+
+    // Chuyển hướng sang action "GetEmployeesByDepartment" của EmployeesController
+    // Truyền route value qua anonymous object
+    return RedirectToAction(
+        actionName: "GetEmployeesByDepartment",
+        controllerName: "Employees",
+        routeValues: new { id = id }
+    );
+}
+
+// Chuyển hướng trong cùng controller — không cần chỉ định controllerName
+[HttpPost]
+public IActionResult Edit(Department department)
+{
+    DepartmentsRepository.UpdateDepartment(department);
+    return RedirectToAction(nameof(Index));   // Về trang danh sách
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Dùng <code>nameof(Index)</code> thay vì chuỗi <code>"Index"</code> để tránh lỗi typo và được refactoring tool hỗ trợ. Tương tự, <code>nameof(EmployeesController)</code> kết hợp với <code>.Replace("Controller", "")</code> giúp lấy tên controller không cần hard-code.</p>
+      </div>
+
+      <h3>Cơ chế hoạt động: HTTP 302 Found</h3>
+      <p>Khi action trả về <code>RedirectToAction</code>, server gửi response với status code <strong>302 Found</strong> và header <code>Location</code> chứa URL đích. Trình duyệt đọc header này và tự động gửi một GET request đến URL mới.</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Response Headers</span><span class="lang">http</span></div>
+        <pre><code>HTTP/1.1 302 Found
+Location: /employees/getemployeesbydepartment/99</code></pre>
+      </div>
+
+      <h3>2. LocalRedirect — chỉ định URL trực tiếp</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Details(int id)
+{
+    // Chỉ định URL trực tiếp — phải là URL nội bộ
+    return LocalRedirect($"/employees/getemployeesbydepartment/{id}");
+}</code></pre>
+      </div>
+
+      <h3>3. Redirect — chuyển hướng ra ngoài ứng dụng</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult GoToGoogle()
+{
+    // Chuyển hướng sang URL bên ngoài
+    return Redirect("https://www.google.com");
+}</code></pre>
+      </div>
+
+      <h3>Redirect vĩnh viễn — HTTP 301 Moved Permanently</h3>
+      <p>Mặc định, các redirect trả về HTTP 302 (tạm thời). Khi muốn chỉ định chuyển hướng vĩnh viễn (hữu ích khi retire API cũ), dùng phiên bản <em>Permanent</em>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// 301 Moved Permanently
+return RedirectToActionPermanent(nameof(Index));
+
+return LocalRedirectPermanent("/departments");
+
+return RedirectPermanent("https://newsite.example.com");</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> <strong>301 được trình duyệt và search engine lưu cache vĩnh viễn.</strong> Chỉ dùng khi bạn chắc chắn URL cũ sẽ không bao giờ được dùng lại. 302 là lựa chọn an toàn hơn cho hầu hết tình huống trong ứng dụng UI.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Bài tập 6 — Xây dựng CRUD UI cho Departments</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Assignment 6 — Implement CRUD UI for Departments</em></p>
+
+      <p>Đây là bài tập thực hành tổng hợp: xây dựng giao diện CRUD hoàn chỉnh cho <strong>Departments</strong> bằng cách kết hợp <code>ContentResult</code> (HTML tự tạo), <code>RedirectToAction</code> sau POST, và Model Binding / Validation đã học ở chương trước — <em>chưa cần Razor View</em>.</p>
+
+      <h3>Yêu cầu giao diện</h3>
+      <ol class="steps">
+        <li><strong>Danh sách (<code>GET /departments</code>):</strong> Hiển thị danh sách phòng ban, mỗi mục có link vào trang Chi tiết. Có nút "Add Department".</li>
+        <li><strong>Chi tiết (<code>GET /departments/details/{id}</code>):</strong> Hiển thị form điền sẵn thông tin phòng ban — có nút Update, nút Cancel, và nút Delete.</li>
+        <li><strong>Thêm mới (<code>GET /departments/create</code>):</strong> Form trống để nhập thông tin phòng ban mới, nút Add.</li>
+        <li><strong>Xử lý Update (<code>POST /departments/edit</code>):</strong> Nhận dữ liệu form, validate, cập nhật repository, redirect về danh sách.</li>
+        <li><strong>Xử lý Create (<code>POST /departments/create</code>):</strong> Nhận dữ liệu form, validate, thêm vào repository, redirect về danh sách.</li>
+        <li><strong>Xử lý Delete (<code>POST /departments/delete/{id}</code>):</strong> Xóa phòng ban, redirect về danh sách.</li>
+      </ol>
+
+      <h3>Cấu hình Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseRouting();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Model và Repository (từ file đính kèm)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Department.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+namespace WebApp.Models
+{
+    public class Department
+    {
+        public Department() { }
+
+        public Department(int id, string name, string? description = "")
+        {
+            Id = id;
+            Name = name;
+            Description = description;
+        }
+
+        public int Id { get; set; }
+
+        [Required]
+        public string? Name { get; set; }
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/DepartmentsRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public static class DepartmentsRepository
+    {
+        private static List&lt;Department&gt; Departments = new()
+        {
+            new Department(1, "Sales", "Sales Department"),
+            new Department(2, "Engineering", "Engineering Department"),
+            new Department(3, "QA", "Quality Assurance")
+        };
+
+        public static List&lt;Department&gt; GetDepartments() =&gt; Departments;
+
+        public static Department? GetDepartmentById(int id) =&gt;
+            Departments.FirstOrDefault(x =&gt; x.Id == id);
+
+        public static void AddDepartment(Department? dept)
+        {
+            if (dept is not null)
+            {
+                dept.Id = Departments.Max(x =&gt; x.Id) + 1;
+                Departments.Add(dept);
+            }
+        }
+
+        public static bool UpdateDepartment(Department? dept)
+        {
+            if (dept is null) return false;
+            var existing = Departments.FirstOrDefault(x =&gt; x.Id == dept.Id);
+            if (existing is null) return false;
+            existing.Name = dept.Name;
+            existing.Description = dept.Description;
+            return true;
+        }
+
+        public static bool DeleteDepartment(Department? dept)
+        {
+            if (dept is null) return false;
+            Departments.Remove(dept);
+            return true;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span> <strong>Mục tiêu bài tập:</strong> Hiểu rằng giao diện web có thể được xây dựng bằng <code>ContentResult</code> (trả chuỗi HTML) ngay trong Controller — không cần Razor View. Đây là bước đệm để bạn nhận ra <em>tại sao</em> Razor View cần thiết: code HTML inline trong C# rất khó bảo trì.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Đáp án Bài tập 6 — CRUD UI hoàn chỉnh</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Assignment 6 — (Answer) Implement CRUD UI for Departments</em></p>
+
+      <p>Dưới đây là toàn bộ <code>DepartmentsController</code> với đầy đủ các action CRUD, lấy từ project thật (<code>DepartmentsCRUD.zip</code>) của giảng viên.</p>
+
+      <h3>HomeController — trang chủ đơn giản</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/HomeController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+
+namespace WebApp.Controllers
+{
+    public class HomeController : Controller
+    {
+        public IActionResult Index()
+        {
+            return Content("Welcome to department management.");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>DepartmentsController — CRUD đầy đủ</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Controllers
+{
+    public class DepartmentsController : Controller
+    {
+        // GET /departments — Danh sách phòng ban
+        [HttpGet]
+        public IActionResult Index()
+        {
+            var departments = DepartmentsRepository.GetDepartments();
+
+            var html = $@"
+                &lt;h1&gt;Departments&lt;/h1&gt;
+                &lt;ul&gt;
+                    {string.Join("", departments.Select(x =&gt; $@"
+                        &lt;li&gt;
+                            &lt;a href='/departments/details/{x.Id}'&gt;{x.Name} ({x.Description})&lt;/a&gt;
+                        &lt;/li&gt;
+                    "))}
+                &lt;/ul&gt;
+                &lt;br/&gt;
+                &lt;a href='/departments/create'&gt;Add Department&lt;/a&gt;";
+
+            return Content(html, "text/html");
+        }
+
+        // GET /departments/details/{id} — Chi tiết + form sửa + nút xóa
+        [HttpGet]
+        public IActionResult Details(int id)
+        {
+            var department = DepartmentsRepository.GetDepartmentById(id);
+
+            if (department == null)
+                return Content("&lt;h3 style='color:red'&gt;Department not found.&lt;/h3&gt;", "text/html");
+
+            var html = $@"
+                &lt;h1&gt;Department Details&lt;/h1&gt;
+                &lt;form method='post' action='/departments/edit'&gt;
+                    &lt;input type='hidden' name='Id' value='{department.Id}' /&gt;
+                    &lt;label&gt;Name: &lt;input type='text' name='Name' value='{department.Name}' /&gt;&lt;/label&gt;&lt;br /&gt;
+                    &lt;label&gt;Description: &lt;input type='text' name='Description' value='{department.Description}' /&gt;&lt;/label&gt;&lt;br /&gt;
+                    &lt;br/&gt;
+                    &lt;a href='/departments'&gt;Cancel&lt;/a&gt;
+                    &lt;button type='submit'&gt;Update&lt;/button&gt;
+                &lt;/form&gt;
+
+                &lt;form method='post' action='/departments/delete/{department.Id}'&gt;
+                    &lt;button type='submit' style='background-color:red;color:white'&gt;Delete&lt;/button&gt;
+                &lt;/form&gt;";
+
+            return Content(html, "text/html");
+        }
+
+        // POST /departments/edit — Cập nhật phòng ban
+        [HttpPost]
+        public IActionResult Edit(Department department)
+        {
+            if (!ModelState.IsValid)
+                return Content(GetErrorsHTML(), "text/html");
+
+            DepartmentsRepository.UpdateDepartment(department);
+            return RedirectToAction(nameof(Index));
+        }
+
+        // GET /departments/create — Form thêm mới (trống)
+        [HttpGet]
+        public IActionResult Create()
+        {
+            var html = @"
+                &lt;h1&gt;Add Department&lt;/h1&gt;
+                &lt;form method='post' action='/departments/create'&gt;
+                    &lt;label&gt;Name: &lt;input type='text' name='Name' /&gt;&lt;/label&gt;&lt;br /&gt;
+                    &lt;label&gt;Description: &lt;input type='text' name='Description' /&gt;&lt;/label&gt;&lt;br /&gt;
+                    &lt;br/&gt;
+                    &lt;button type='submit'&gt;Add&lt;/button&gt;
+                    &lt;a href='/departments'&gt;Cancel&lt;/a&gt;
+                &lt;/form&gt;";
+
+            return Content(html, "text/html");
+        }
+
+        // POST /departments/create — Lưu phòng ban mới
+        [HttpPost]
+        public IActionResult Create(Department department)
+        {
+            if (!ModelState.IsValid)
+                return Content(GetErrorsHTML(), "text/html");
+
+            DepartmentsRepository.AddDepartment(department);
+            return RedirectToAction(nameof(Index));
+        }
+
+        // POST /departments/delete/{id} — Xóa phòng ban
+        [HttpPost]
+        public IActionResult Delete(int id)
+        {
+            var department = DepartmentsRepository.GetDepartmentById(id);
+
+            if (department == null)
+            {
+                ModelState.AddModelError("id", $"Department with id={id} does not exist.");
+                return Content(GetErrorsHTML(), "text/html");
+            }
+
+            DepartmentsRepository.DeleteDepartment(department);
+            return RedirectToAction(nameof(Index));
+        }
+
+        // Helper: tổng hợp lỗi ModelState thành HTML
+        private string GetErrorsHTML()
+        {
+            var errorMessages = new List&lt;string&gt;();
+
+            foreach (var value in ModelState.Values)
+                foreach (var error in value.Errors)
+                    errorMessages.Add(error.ErrorMessage);
+
+            if (errorMessages.Count == 0) return string.Empty;
+
+            return $@"
+                &lt;ul&gt;
+                    {string.Join("", errorMessages.Select(e =&gt; $"&lt;li style='color:red'&gt;{e}&lt;/li&gt;"))}
+                &lt;/ul&gt;";
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Luồng hoạt động CRUD — Post/Redirect/Get Pattern</h3>
+      <ol class="steps">
+        <li>Người dùng truy cập <code>GET /departments</code> → thấy danh sách phòng ban.</li>
+        <li>Click vào phòng ban → <code>GET /departments/details/{id}</code> → form điền sẵn.</li>
+        <li>Sửa thông tin, click "Update" → <code>POST /departments/edit</code> → validate → <code>RedirectToAction(nameof(Index))</code> → HTTP 302 → trình duyệt GET lại danh sách.</li>
+        <li>Click "Add Department" → <code>GET /departments/create</code> → form trống.</li>
+        <li>Điền và click "Add" → <code>POST /departments/create</code> → thêm vào repository → redirect về danh sách.</li>
+        <li>Click "Delete" trong trang chi tiết → <code>POST /departments/delete/{id}</code> → xóa → redirect về danh sách.</li>
+      </ol>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> <strong>Nút Delete phải dùng form POST, không dùng link GET.</strong> Nếu dùng <code>&lt;a href='/departments/delete/1'&gt;</code>, bất kỳ ai (kể cả crawler) có thể vô tình kích hoạt xóa dữ liệu. Dùng <code>&lt;form method='post'&gt;</code> đảm bảo hành động xóa phải là chủ ý của người dùng.</p>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span> <strong>Bài học quan trọng từ bài tập này:</strong> Viết HTML bằng string interpolation trong C# rất cồng kềnh, dễ sai, và khó bảo trì. Đây chính là lý do <strong>Razor View</strong> ra đời — cho phép viết HTML tự nhiên với C# nhúng vào, thay vì nhúng HTML vào C#. Chương tiếp theo sẽ giải quyết đúng vấn đề này.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-09.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">09 · MVC Controllers — Model Binding &amp; Validation</div>
+      </a>
+      <a class="next" href="lesson-11.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">11 · MVC — Razor Views</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

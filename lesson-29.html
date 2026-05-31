@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 29 — Securing Web API (Bảo mật Web API) | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 29 — Securing Web API</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. JWT là gì? Tại sao dùng cho Web API?</a></li>
+      <li><a href="#s2">2. Sinh JWT Authentication Ticket</a></li>
+      <li><a href="#s3">3. Client lưu và gửi JWT</a></li>
+      <li><a href="#s4">4. Lưu JWT trong static repository</a></li>
+      <li><a href="#s5">5. Giải mã và xác thực JWT trên Web API</a></li>
+      <li><a href="#s6">6. Authorization dựa trên JWT</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 29</span>
+      <h1>Securing Web API (Bảo mật Web API)</h1>
+      <p class="lead">Bảo mật Web API bằng JWT — tìm hiểu lý thuyết JSON Web Token, sinh và ký JWT trên server, client lưu &amp; gửi token qua header Authorization Bearer, cấu hình Web API giải mã và kiểm tra JWT, và phân quyền endpoint bằng policy dựa trên claims trong JWT.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> JWT là gì? Tại sao dùng cho Web API?</h2>
+      <p class="subvideo-meta">Bài 1 · <em>JWT Authentication Ticket</em></p>
+
+      <p>Ở chương trước (Securing Web App), authentication ticket được tạo ra dưới dạng <strong>cookie</strong> và trình duyệt tự động lưu, tự động gửi kèm mỗi request. Cơ chế này hoạt động tốt khi client là trình duyệt web.</p>
+
+      <p>Tuy nhiên, khi server phơi ra một <strong>Web API</strong>, client có thể là bất kỳ loại nào: ứng dụng di động, smart TV, thiết bị IoT, hoặc một ứng dụng web khác. Những client này không có cơ chế cookie giống trình duyệt — vì vậy chúng ta cần một định dạng authentication ticket khác, phổ quát hơn.</p>
+
+      <h3>Bearer Token và JSON Web Token</h3>
+      <p>Giải pháp là dùng <strong>Bearer Token</strong>: thay vì lưu ticket trong cookie, client lưu một chuỗi token và đính kèm nó vào header <code>Authorization</code> của mỗi request:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Header</span><span class="lang">http</span></div>
+        <pre><code>Authorization: Bearer &lt;token_string&gt;</code></pre>
+      </div>
+
+      <p><strong>JSON Web Token (JWT)</strong> là tiêu chuẩn phổ biến nhất để đóng gói thông tin xác thực thành một chuỗi Bearer Token. JWT có cấu trúc gồm 3 phần cách nhau bởi dấu chấm:</p>
+
+      <table class="tbl">
+        <tr><th>Phần</th><th>Tên</th><th>Nội dung</th></tr>
+        <tr><td><code>xxxxx</code></td><td>Header</td><td>Thuật toán ký (ví dụ: <code>HS256</code>) và loại token (<code>JWT</code>) — Base64Url encoded.</td></tr>
+        <tr><td><code>yyyyy</code></td><td>Payload</td><td>Các <strong>claims</strong>: thông tin về người dùng (name, role, email...) và metadata (thời gian hết hạn <code>exp</code>, thời gian tạo <code>iat</code>...) — Base64Url encoded.</td></tr>
+        <tr><td><code>zzzzz</code></td><td>Signature</td><td>Chữ ký số — bảo đảm token không bị giả mạo. Được tạo bằng cách ký header + payload với <strong>secret key</strong> (hoặc private key RSA).</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span><strong>Điểm mấu chốt:</strong> JWT <em>không được mã hóa</em> — ai cũng có thể decode phần Payload để đọc claims. Tuy nhiên, JWT được <em>ký số</em> — server kiểm tra chữ ký để biết token có bị giả mạo hay không. Vì vậy, <strong>không lưu thông tin nhạy cảm</strong> (mật khẩu, thẻ tín dụng...) trong JWT.</p>
+      </div>
+
+      <h3>Luồng hoạt động tổng quát</h3>
+      <ol class="steps">
+        <li><strong>Client gửi credentials</strong> (ClientId + ClientSecret, hoặc username + password) đến endpoint <code>POST /account/login</code> của Web API.</li>
+        <li><strong>Web API xác thực</strong> credentials, tạo danh sách claims (tên, vai trò...) rồi <strong>sinh JWT</strong> có thời hạn, ký bằng secret key và trả về cho client.</li>
+        <li><strong>Client lưu JWT</strong> (trong session, localStorage, hoặc static repository tuỳ platform).</li>
+        <li>Mỗi request tiếp theo, <strong>client đính kèm JWT</strong> vào header <code>Authorization: Bearer &lt;token&gt;</code>.</li>
+        <li><strong>Web API giải mã và xác thực JWT</strong>: kiểm tra chữ ký, kiểm tra thời hạn. Nếu hợp lệ, lấy claims ra để dùng cho authorization.</li>
+        <li><strong>Authorization</strong> kiểm tra claims trong JWT (ví dụ: Role = Admin) để cho phép hoặc từ chối truy cập endpoint.</li>
+      </ol>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Trong khóa học này, project <strong>WebApp</strong> (MVC) đóng vai trò <em>client</em> gọi đến project <strong>WebApi</strong>. WebApp dùng cookie để xác thực người dùng cuối, còn WebApi dùng JWT để xác thực các client ứng dụng gọi vào API.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Sinh JWT Authentication Ticket</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Generate JWT Authentication Ticket</em></p>
+
+      <p>Bước đầu tiên ở phía Web API là xây dựng endpoint đăng nhập (<code>POST /account/login</code>) nhận credentials từ client, xác thực, rồi <strong>tạo và ký JWT</strong>.</p>
+
+      <h3>Cấu hình secret key trong appsettings.json</h3>
+      <p>Secret key dùng để ký JWT phải đủ dài (ít nhất 32 ký tự cho HMAC-SHA256) và được lưu trong cấu hình, không hard-code trong code:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.json (WebApi)</span><span class="lang">json</span></div>
+        <pre><code>{
+  "ClientAuthentication": {
+    "SecurityKey": "n4T5@h$W3*9vz!Lk1dX#FpJ8&amp;7qRg2YeS"
+  }
+}</code></pre>
+      </div>
+
+      <h3>Model CredentialViewModel</h3>
+      <p>Web API dùng client credentials (ClientId / ClientSecret) thay vì email/password của người dùng cuối:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/CredentialViewModel.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+namespace WebApp.Model
+{
+    public class CredentialViewModel
+    {
+        [Required]
+        public string? ClientId { get; set; }
+
+        [Required]
+        public string? ClientSecret { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <h3>AccountEndpoints — sinh JWT</h3>
+      <p>Toàn bộ logic tạo JWT nằm trong <code>AccountEndpoints.cs</code>. Phương thức <code>CreateToken</code> tạo <code>SymmetricSecurityKey</code> từ secret key, tạo <code>SigningCredentials</code> với HMAC-SHA256, rồi dùng <code>JsonWebTokenHandler</code> (từ package <code>Microsoft.IdentityModel.JsonWebTokens</code>) để tạo token string:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/AccountEndpoints.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using System.Text;
+using WebApp.Model;
+
+namespace WebApi.Endpoints
+{
+    public static class AccountEndpoints
+    {
+        public static void MapAccountEndpoints(this WebApplication app)
+        {
+            app.MapPost("/account/login",
+                [Tags("Web API - Accounts")]
+                (CredentialViewModel credential, IConfiguration configuration) =&gt;
+            {
+                // Xác thực client credentials
+                if (credential.ClientId == "web-app-001" &amp;&amp; credential.ClientSecret == "n4T5@h$W3*9vz!Lk1dX#FpJ8&amp;7qRg2" ||
+                    credential.ClientId == "web-app-002" &amp;&amp; credential.ClientSecret == "n4T5@h$W3*9vz!Lk1dX#FpJ8&amp;7qRg2")
+                {
+                    // Tạo danh sách claims
+                    var claims = new List&lt;Claim&gt;();
+                    claims.Add(new Claim(ClaimTypes.Name, credential.ClientId));
+
+                    if (credential.ClientId == "web-app-001")
+                        claims.Add(new Claim("Role", "Admin"));
+                    else
+                        claims.Add(new Claim("Role", "User"));
+
+                    var expiresAt = DateTime.UtcNow.AddMinutes(20);
+
+                    return TypedResults.Ok(new
+                    {
+                        access_token = CreateToken(claims, expiresAt, configuration),
+                        expires_at = expiresAt,
+                    });
+                }
+                else
+                {
+                    return Microsoft.AspNetCore.Http.Results.ValidationProblem(
+                        new Dictionary&lt;string, string[]&gt;
+                        {
+                            { "ClientId",     new[] { "Errors in ClientId or ClientSecret." } },
+                            { "ClientSecret", new[] { "Errors in ClientId or ClientSecret." } },
+                        },
+                        statusCode: 401);
+                }
+            }).WithParameterValidation();
+        }
+
+        public static string CreateToken(
+            IEnumerable&lt;Claim&gt; claims,
+            DateTime expiresAt,
+            IConfiguration configuration)
+        {
+            // 1. Tạo SymmetricSecurityKey từ secret key trong cấu hình
+            var securityKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(
+                    configuration["ClientAuthentication:SecurityKey"] ?? string.Empty));
+
+            // 2. Tạo SigningCredentials với thuật toán HMAC-SHA256
+            var signingCredentials = new SigningCredentials(
+                securityKey,
+                SecurityAlgorithms.HmacSha256Signature);
+
+            // 3. Chuyển List&lt;Claim&gt; thành Dictionary cho SecurityTokenDescriptor
+            var claimsDictionary = new Dictionary&lt;string, object&gt;();
+            foreach (var claim in claims)
+                claimsDictionary[claim.Type] = claim.Value;
+
+            // 4. Mô tả token
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Claims = claimsDictionary,
+                Expires = expiresAt,
+                SigningCredentials = signingCredentials
+            };
+
+            // 5. Sinh token string
+            var tokenHandler = new JsonWebTokenHandler();
+            return tokenHandler.CreateToken(tokenDescriptor);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>JsonWebTokenHandler vs JwtSecurityTokenHandler:</strong> <code>JsonWebTokenHandler</code> là API mới hơn trong .NET, không cần cast về <code>SecurityToken</code> rồi gọi <code>WriteToken()</code> như <code>JwtSecurityTokenHandler</code> — trả về chuỗi token trực tiếp từ <code>CreateToken()</code>. Khuyến nghị dùng <code>JsonWebTokenHandler</code> trong các project .NET 7+.</p>
+      </div>
+
+      <h3>Response trả về</h3>
+      <p>Khi đăng nhập thành công, API trả về JSON chứa token và thời gian hết hạn:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Response (JSON)</span><span class="lang">json</span></div>
+        <pre><code>{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_at": "2025-02-05T10:20:00Z"
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Client lưu và gửi JWT</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Store and Send JWT</em></p>
+
+      <p>Sau khi Web API sinh ra JWT và trả về, <strong>client phải tự lưu token</strong> và <strong>tự đính kèm vào mọi request tiếp theo</strong> — khác hoàn toàn với cookie (trình duyệt làm tự động). Trong project này, WebApp (client) xử lý việc đó thông qua một <strong>DelegatingHandler</strong>.</p>
+
+      <h3>Model JsonWebToken</h3>
+      <p>Tạo một class để deserialize JSON response từ API đăng nhập:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/JsonWebToken.cs (WebApp)</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Text.Json.Serialization;
+
+namespace WebApp.Model
+{
+    public class JsonWebToken
+    {
+        [JsonPropertyName("access_token")]
+        public string? AccessToken { get; set; }
+
+        [JsonPropertyName("expires_at")]
+        public DateTime ExpiresAt { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <h3>JWTAuthenticationHandler — DelegatingHandler</h3>
+      <p><code>DelegatingHandler</code> là một <em>message handler</em> được cắm vào pipeline của <code>HttpClient</code>. Mọi request gửi đi qua <code>HttpClient</code> sẽ đi qua handler này trước. <code>JWTAuthenticationHandler</code> thực hiện:</p>
+      <ol class="steps">
+        <li>Kiểm tra session: nếu đã có token, lấy ra và parse.</li>
+        <li>Nếu token hết hạn hoặc chưa có, gọi <code>POST /account/login</code> để lấy token mới và lưu vào session.</li>
+        <li>Gắn token vào header <code>Authorization: Bearer ...</code> của request.</li>
+        <li>Chuyển tiếp request bằng <code>base.SendAsync()</code>.</li>
+      </ol>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">MessageHandlers/JWTAuthenticationHandler.cs (WebApp)</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Net.Http.Headers;
+using System.Text.Json;
+using WebApp.Model;
+
+namespace WebApp.MessageHandlers
+{
+    public class JWTAuthenticationHandler : DelegatingHandler
+    {
+        private readonly IHttpContextAccessor httpContextAccessor;
+        private readonly IConfiguration configuration;
+
+        public JWTAuthenticationHandler(
+            IHttpContextAccessor httpContextAccessor,
+            IConfiguration configuration)
+        {
+            this.httpContextAccessor = httpContextAccessor;
+            this.configuration = configuration;
+        }
+
+        protected override async Task&lt;HttpResponseMessage&gt; SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var session = httpContextAccessor.HttpContext?.Session;
+
+            // Lấy token từ session (hoặc đăng nhập mới)
+            JsonWebToken token;
+            string? strToken = session?.GetString("access_token");
+
+            if (string.IsNullOrWhiteSpace(strToken))
+                token = await Login();
+            else
+                token = JsonSerializer.Deserialize&lt;JsonWebToken&gt;(strToken) ?? new JsonWebToken();
+
+            // Nếu token hết hạn, đăng nhập lại
+            if (string.IsNullOrWhiteSpace(token.AccessToken) ||
+                token.ExpiresAt &lt;= DateTime.UtcNow)
+            {
+                token = await Login();
+            }
+
+            // Gắn token vào Authorization header
+            if (!string.IsNullOrWhiteSpace(token.AccessToken))
+            {
+                request.Headers.Authorization =
+                    new AuthenticationHeaderValue("Bearer", token.AccessToken);
+            }
+
+            return await base.SendAsync(request, cancellationToken);
+        }
+
+        private async Task&lt;JsonWebToken&gt; Login()
+        {
+            using var client = new HttpClient();
+            var response = await client.PostAsJsonAsync(
+                $"{configuration["WebApi:Url"]}account/login",
+                new
+                {
+                    ClientId     = configuration["WebApi:ClientId"],
+                    ClientSecret = configuration["WebApi:ClientSecret"]
+                });
+            response.EnsureSuccessStatusCode();
+
+            string strJwt = await response.Content.ReadAsStringAsync();
+
+            // Lưu token vào session để tái sử dụng
+            httpContextAccessor.HttpContext?.Session.SetString("access_token", strJwt);
+
+            return JsonSerializer.Deserialize&lt;JsonWebToken&gt;(strJwt) ?? new JsonWebToken();
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Đăng ký handler và cấu hình HttpClient</h3>
+      <p>Trong <code>Program.cs</code> của WebApp, đăng ký <code>JWTAuthenticationHandler</code> vào DI và cắm nó vào <code>HttpClient</code> factory:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs (WebApp) — trích đoạn</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient&lt;JWTAuthenticationHandler&gt;();
+
+builder.Services.AddHttpClient("ApiEndpoints", client =&gt;
+{
+    client.BaseAddress = new Uri("http://localhost:5065/");
+})
+.AddHttpMessageHandler&lt;JWTAuthenticationHandler&gt;();
+
+// Cần Session để lưu token
+builder.Services.AddSession(options =&gt;
+{
+    options.Cookie.HttpOnly = true;
+    options.IdleTimeout = TimeSpan.FromMinutes(20);
+    options.Cookie.IsEssential = true;
+});
+
+// ...
+app.UseSession(); // phải có trước khi dùng session</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Cấu hình <code>WebApi:Url</code>, <code>WebApi:ClientId</code>, <code>WebApi:ClientSecret</code> nên để trong <code>appsettings.json</code> của WebApp (hoặc user-secrets khi phát triển) để tránh hard-code credentials trong code.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Lưu JWT trong static repository</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Store JWT in static repository</em></p>
+
+      <p>Ở bài 3, JWT được lưu trong <strong>Session</strong> (vốn được duy trì bởi cookie phía WebApp). Đây là cách hợp lý khi client là ứng dụng web chạy trên server. Tuy nhiên, với các client khác như <strong>ứng dụng di động</strong>, <strong>smart TV</strong>, hoặc <strong>IoT device</strong>, không có khái niệm session hay cookie.</p>
+
+      <h3>Giải pháp thay thế: static repository</h3>
+      <p>Một cách tiếp cận đơn giản cho môi trường học tập là lưu JWT trong một <strong>static repository</strong> — tức là một class với field <code>static</code> tồn tại suốt vòng đời ứng dụng:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/JwtRepository.cs (ví dụ minh họa)</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    /// &lt;summary&gt;
+    /// Repository tĩnh — lưu JWT trong bộ nhớ ứng dụng.
+    /// Dùng cho demo; trong production hãy dùng Distributed Cache hoặc
+    /// cơ chế lưu trữ phù hợp với platform (Keychain, SecureStorage...).
+    /// &lt;/summary&gt;
+    public static class JwtRepository
+    {
+        public static string? AccessToken { get; set; }
+        public static DateTime ExpiresAt { get; set; }
+
+        public static bool IsValid()
+            =&gt; !string.IsNullOrWhiteSpace(AccessToken) &amp;&amp;
+               ExpiresAt &gt; DateTime.UtcNow;
+    }
+}</code></pre>
+      </div>
+
+      <p>Phần logic trong handler khi đó thay <code>session.GetString / session.SetString</code> bằng đọc/ghi trực tiếp <code>JwtRepository.AccessToken</code> và <code>JwtRepository.ExpiresAt</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">MessageHandlers/JWTAuthenticationHandler.cs — dùng static repo</span><span class="lang">csharp</span></div>
+        <pre><code>protected override async Task&lt;HttpResponseMessage&gt; SendAsync(
+    HttpRequestMessage request,
+    CancellationToken cancellationToken)
+{
+    // Kiểm tra token trong static repository
+    if (!JwtRepository.IsValid())
+    {
+        var jwt = await Login();
+        JwtRepository.AccessToken = jwt.AccessToken;
+        JwtRepository.ExpiresAt   = jwt.ExpiresAt;
+    }
+
+    // Gắn token vào header
+    request.Headers.Authorization =
+        new AuthenticationHeaderValue("Bearer", JwtRepository.AccessToken);
+
+    return await base.SendAsync(request, cancellationToken);
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Chỉ dùng static repository cho mục đích demo.</strong> Trong production: (1) nếu server có nhiều instance, static field không chia sẻ giữa các instance; (2) không thread-safe khi nhiều request đồng thời; (3) dữ liệu mất khi ứng dụng restart. Hãy dùng <strong>Distributed Cache</strong> (Redis), <strong>IMemoryCache</strong> có lock, hoặc cơ chế lưu trữ phù hợp với platform.</p>
+      </div>
+
+      <h3>Khi nào dùng session, khi nào dùng static repo?</h3>
+      <table class="tbl">
+        <tr><th>Phương pháp lưu JWT</th><th>Phù hợp với</th><th>Ghi chú</th></tr>
+        <tr><td>Session (cookie-backed)</td><td>WebApp trên server (.NET MVC, Razor Pages)</td><td>Mỗi user có session riêng; token tự hết hạn cùng session.</td></tr>
+        <tr><td>Static repository</td><td>Demo, client đơn luồng (CLI tool, console app)</td><td>Đơn giản; không phù hợp production đa instance.</td></tr>
+        <tr><td>localStorage / SecureStorage</td><td>SPA (React, Angular), mobile app</td><td>Lưu phía client; phải cẩn thận XSS (SPA) hoặc dùng Keychain/Keystore (mobile).</td></tr>
+        <tr><td>Distributed Cache (Redis)</td><td>Server-side client với nhiều instance</td><td>Thread-safe, chia sẻ giữa các instance, có TTL.</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Giải mã và xác thực JWT trên Web API</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Interpret JWT</em></p>
+
+      <p>Client đã gửi JWT trong header <code>Authorization: Bearer &lt;token&gt;</code>, nhưng Web API chưa làm gì với nó. Bước tiếp theo: <strong>cấu hình Web API để giải mã và xác thực JWT</strong> — chuyển chuỗi token thành <code>ClaimsPrincipal</code> có thể dùng cho authorization.</p>
+
+      <h3>Cài đặt NuGet package</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Microsoft.AspNetCore.Authentication.JwtBearer</code></pre>
+      </div>
+
+      <h3>Cấu hình AddAuthentication + AddJwtBearer trong Program.cs</h3>
+      <p>Đây là phần cốt lõi: đăng ký JWT Bearer scheme và cấu hình <code>TokenValidationParameters</code> — bộ tham số kiểm tra khi server nhận được một JWT:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs (WebApi)</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddAuthentication(options =&gt;
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultSignInScheme       = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =&gt;
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        // Không kiểm tra Audience và Issuer (đơn giản cho demo)
+        ValidateAudience         = false,
+        ValidateIssuer           = false,
+
+        // Kiểm tra thời hạn token
+        ValidateLifetime         = true,
+        ClockSkew                = TimeSpan.Zero, // Không có dung sai thời gian
+
+        // Kiểm tra chữ ký — bắt buộc
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey         = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(
+                builder.Configuration["ClientAuthentication:SecurityKey"] ?? string.Empty))
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// ... các dịch vụ khác ...
+
+var app = builder.Build();
+
+// ...
+
+// QUAN TRỌNG: UseAuthentication TRƯỚC UseAuthorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapAccountEndpoints();
+app.MapEmployeeEndpoints();
+app.MapDepartmentEndpoints(apiVersionSet);
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Giải thích TokenValidationParameters</h3>
+      <table class="tbl">
+        <tr><th>Tham số</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>ValidateIssuerSigningKey = true</code></td><td>Bắt buộc kiểm tra chữ ký — ngăn token bị giả mạo.</td></tr>
+        <tr><td><code>IssuerSigningKey</code></td><td>Khoá dùng để xác minh chữ ký; phải khớp với khoá đã dùng để ký token.</td></tr>
+        <tr><td><code>ValidateLifetime = true</code></td><td>Từ chối token đã hết hạn (<code>exp</code> claim).</td></tr>
+        <tr><td><code>ClockSkew = TimeSpan.Zero</code></td><td>Mặc định .NET cho phép trễ 5 phút. Đặt về 0 để kiểm tra thời hạn chính xác.</td></tr>
+        <tr><td><code>ValidateIssuer = false</code></td><td>Không kiểm tra <code>iss</code> claim. Trong production nên đặt <code>true</code> và cấu hình <code>ValidIssuer</code>.</td></tr>
+        <tr><td><code>ValidateAudience = false</code></td><td>Không kiểm tra <code>aud</code> claim. Trong production nên đặt <code>true</code> và cấu hình <code>ValidAudience</code>.</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Middleware <code>app.UseAuthentication()</code> đọc header <code>Authorization: Bearer ...</code>, giải mã JWT và nếu hợp lệ, gán <code>HttpContext.User</code> thành <code>ClaimsPrincipal</code> chứa các claims của token. Nhờ đó, các middleware phía sau (kể cả <code>UseAuthorization()</code> và các endpoint) có thể truy cập thông tin người dùng qua <code>HttpContext.User</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Authorization dựa trên JWT</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Authorization based on JWT</em></p>
+
+      <p>Sau khi Web API đã xác thực JWT và populate <code>HttpContext.User</code>, bước cuối cùng là <strong>dùng claims trong JWT để phân quyền endpoint</strong> — tức là kiểm soát endpoint nào được phép truy cập với vai trò nào.</p>
+
+      <p>Cơ chế này hoàn toàn giống với authorization dựa trên cookie ở chương 28 — vì về bản chất, cả hai đều sử dụng <strong>ClaimsPrincipal</strong> làm nguồn thông tin phân quyền. Sự khác biệt chỉ là nguồn gốc của ClaimsPrincipal: từ cookie (chương 28) hay từ JWT (chương 29).</p>
+
+      <h3>Cấu hình Authorization Policy trong Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs (WebApi)</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddAuthorization(options =&gt;
+{
+    options.AddPolicy("AdminOnly", policy =&gt;
+    {
+        // Yêu cầu claim "Role" có giá trị "Admin"
+        policy.RequireClaim("Role", "Admin");
+    });
+});</code></pre>
+      </div>
+
+      <h3>Bảo vệ endpoint bằng [Authorize]</h3>
+      <p>Áp dụng attribute <code>[Authorize]</code> lên endpoint handler trong Minimal API. Có thể yêu cầu xác thực đơn thuần, hoặc yêu cầu một policy cụ thể:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Authorization;
+
+public static class EmployeeEndpoints
+{
+    public static void MapEmployeeEndpoints(this WebApplication app)
+    {
+        // Endpoint này yêu cầu JWT hợp lệ VÀ claim Role = Admin
+        app.MapGet("/employees/search",
+            [Tags("Web API - Employees")]
+            [Authorize(Policy = "AdminOnly")]
+            (string? filter, int? departmentId, IEmployeesRepository repo) =&gt;
+            {
+                if (string.IsNullOrWhiteSpace(filter)) filter = null;
+                if (departmentId == 0) departmentId = null;
+
+                var employees = repo.GetEmployees(filter, departmentId);
+                return TypedResults.Ok(employees);
+            });
+
+        // Endpoint này yêu cầu JWT hợp lệ (bất kỳ role nào)
+        app.MapGet("/employees",
+            [Tags("Web API - Employees")]
+            [Authorize]
+            (IEmployeesRepository repo) =&gt;
+            {
+                return TypedResults.Ok(repo.GetEmployees());
+            });
+
+        // Endpoint công khai — không cần JWT
+        app.MapGet("/", HtmlResult () =&gt;
+        {
+            return new HtmlResult("&lt;h2&gt;Welcome to our API&lt;/h2&gt;");
+        });
+    }
+}</code></pre>
+      </div>
+
+      <h3>Luồng hoạt động đầy đủ</h3>
+      <ol class="steps">
+        <li>WebApp gọi <code>GET /employees/search</code> kèm header <code>Authorization: Bearer eyJ...</code>.</li>
+        <li>Middleware <code>UseAuthentication()</code> phân tích header, xác minh chữ ký JWT, kiểm tra <code>exp</code>. Nếu hợp lệ, tạo <code>ClaimsPrincipal</code> và gán vào <code>HttpContext.User</code>.</li>
+        <li>Middleware <code>UseAuthorization()</code> kiểm tra <code>[Authorize(Policy = "AdminOnly")]</code>: tìm claim <code>"Role" = "Admin"</code> trong <code>HttpContext.User</code>.</li>
+        <li>Nếu claim tồn tại → cho phép, endpoint handler được gọi và trả về <code>200 OK</code>.</li>
+        <li>Nếu không có JWT hoặc JWT không hợp lệ → <code>401 Unauthorized</code>.</li>
+        <li>Nếu JWT hợp lệ nhưng thiếu claim cần thiết → <code>403 Forbidden</code>.</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span><strong>Tổng kết chuỗi bảo mật Web API với JWT:</strong></p>
+        <ul>
+          <li><strong>WebApi</strong> cấu hình <code>AddAuthentication().AddJwtBearer()</code> để biết cách đọc và kiểm tra JWT.</li>
+          <li><strong>WebApi</strong> cấu hình <code>AddAuthorization()</code> với các policy dựa trên claims.</li>
+          <li><strong>WebApi</strong> sinh JWT tại endpoint <code>/account/login</code> bằng <code>JsonWebTokenHandler</code> + <code>SymmetricSecurityKey</code>.</li>
+          <li><strong>WebApp (client)</strong> dùng <code>DelegatingHandler</code> để tự động lấy, lưu và gửi JWT trong header <code>Authorization: Bearer</code>.</li>
+          <li><strong>Endpoint</strong> được bảo vệ bằng <code>[Authorize]</code> hoặc <code>[Authorize(Policy = "...")]</code>.</li>
+        </ul>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Production checklist:</strong> (1) Luôn đặt <code>ValidateIssuer = true</code> và <code>ValidateAudience = true</code>; (2) Lưu secret key trong <em>Azure Key Vault</em> hoặc biến môi trường, không trong <code>appsettings.json</code> commit vào Git; (3) Dùng thời hạn token ngắn (5–20 phút) kết hợp với <em>Refresh Token</em>; (4) Luôn dùng HTTPS để bảo vệ token khi truyền qua mạng.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-28.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">28 · Securing Web App</div>
+      </a>
+      <a class="next disabled" href="#">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">&nbsp;</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 27 — Exception Handling | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 27 — Exception Handling</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Logging trong middleware xử lý ngoại lệ</a></li>
+      <li><a href="#s2">2. Exception Handling Middleware tích hợp sẵn</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 27</span>
+      <h1>Exception Handling</h1>
+      <p class="lead">Xử lý ngoại lệ — logging trong middleware xử lý lỗi, và Exception Handling Middleware tích hợp sẵn trong ASP.NET Core .NET 9.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Logging trong middleware xử lý ngoại lệ</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Logging in Exception Handling Middleware</em></p>
+
+      <p>Trong phần trước chúng ta đã xây dựng một <strong>custom exception handling middleware</strong>. Bài này bổ sung
+        một điểm quan trọng còn thiếu: <strong>ghi log</strong> (logging) bên trong middleware đó, tận dụng hệ thống
+        logging có sẵn của ASP.NET Core thay vì tự cài đặt riêng.</p>
+
+      <h3>Tại sao phải ghi log trong exception handler?</h3>
+      <p>Khi một ngoại lệ xảy ra trong pipeline, middleware bắt được nó và trả về response phù hợp cho client.
+        Nhưng nếu chỉ dừng ở đó, đội vận hành / nhà phát triển sẽ không biết lỗi đã xảy ra ở đâu, khi nào, với
+        thông tin gì. Ghi log ở mức <strong>Critical</strong> cho phép hệ thống logging (dù là built-in console,
+        Serilog, hay bất kỳ provider nào) ghi lại toàn bộ chi tiết ngoại lệ để phân tích sau.</p>
+
+      <h3>Inject ILogger vào custom middleware</h3>
+      <p>Middleware ASP.NET Core là một class thường, do vậy ta inject <code>ILogger&lt;T&gt;</code> qua constructor
+        như bất kỳ dịch vụ nào khác. Category name tự động là tên class, thuận tiện cho việc lọc log.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Middleware/MyExceptionHandlerMiddleware.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+namespace MyApp.Middleware;
+
+public class MyExceptionHandlerMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger&lt;MyExceptionHandlerMiddleware&gt; _logger;
+
+    public MyExceptionHandlerMiddleware(
+        RequestDelegate next,
+        ILogger&lt;MyExceptionHandlerMiddleware&gt; logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);   // gọi middleware tiếp theo trong pipeline
+        }
+        catch (Exception ex)
+        {
+            // Ghi log với mức Critical — mức nghiêm trọng nhất
+            _logger.LogCritical(ex, "An exception occurred: {Message}", ex.Message);
+
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsync("An unexpected error occurred. Please try again later.");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><strong>Tại sao dùng mức Critical?</strong> Thang mức log của .NET gồm:
+          <code>Trace</code> &lt; <code>Debug</code> &lt; <code>Information</code> &lt; <code>Warning</code> &lt;
+          <code>Error</code> &lt; <code>Critical</code>. Ngoại lệ chưa được xử lý ảnh hưởng trực tiếp đến
+          toàn bộ request — đây là sự cố nghiêm trọng nhất, nên dùng <code>Critical</code>. Tuy nhiên trong
+          một số dự án, <code>Error</code> cũng được chấp nhận; hãy tuân theo quy ước của nhóm.</p>
+      </div>
+
+      <h3>Đăng ký middleware vào pipeline</h3>
+      <p>Middleware xử lý ngoại lệ phải được đặt <strong>đầu tiên</strong> trong pipeline để bắt mọi ngoại lệ
+        từ tất cả middleware phía sau.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Phải đứng ĐẦU TIÊN để bao phủ toàn bộ pipeline
+app.UseMiddleware&lt;MyExceptionHandlerMiddleware&gt;();
+
+app.MapGet("/", () =&gt; "Hello World!");
+
+app.MapGet("/error", () =&gt;
+{
+    throw new ApplicationException("This is a test exception");
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Kết quả log thực tế</h3>
+      <p>Khi exception xảy ra, output trong console (hoặc file log) sẽ tương tự:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Console output</span><span class="lang">text</span></div>
+        <pre><code>crit: MyApp.Middleware.MyExceptionHandlerMiddleware[0]
+      An exception occurred: This is a test exception
+      System.ApplicationException: This is a test exception
+         at Program.&lt;&gt;c.&lt;&lt;-main&gt;b__0_1&gt;d.MoveNext() in Program.cs:line 17
+         at MyApp.Middleware.MyExceptionHandlerMiddleware.InvokeAsync(...) in ...line 19</code></pre>
+      </div>
+
+      <p>Từ stack trace ta thấy rõ: dòng gây lỗi (<code>throw</code>) và dòng mà middleware gọi <code>await _next(context)</code>
+        — rất hữu ích khi debug.</p>
+
+      <div class="callout tip">
+        <p><strong>Không cần biết logger nào đang chạy.</strong> Bằng cách inject <code>ILogger&lt;T&gt;</code>,
+          middleware hoàn toàn không phụ thuộc vào provider cụ thể. Dù dự án dùng console logger, Serilog, NLog
+          hay Application Insights, middleware vẫn hoạt động đúng mà không cần sửa code.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Exception Handling Middleware tích hợp sẵn</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Use the built-in Exception Handling Middleware</em></p>
+
+      <p>ASP.NET Core cung cấp sẵn nhiều cơ chế xử lý ngoại lệ mà không cần tự viết middleware từ đầu. Bài này
+        trình bày tất cả các lựa chọn: <strong>Developer Exception Page</strong>, <strong>UseExceptionHandler</strong>
+        (handler path và lambda), <strong>IExceptionHandler</strong> (.NET 8+), <strong>Problem Details</strong>,
+        và <strong>UseStatusCodePages</strong>.</p>
+
+      <h3>1 — Developer Exception Page (môi trường Development)</h3>
+      <p><code>UseDeveloperExceptionPage()</code> hiển thị trang chi tiết lỗi chỉ dành cho nhà phát triển: stack trace,
+        request headers, cookies, query string… Không bao giờ bật ở Production.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    // Trang lỗi chi tiết — CHỈ dùng ở Development
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    // Trang lỗi thân thiện cho người dùng cuối
+    app.UseExceptionHandler("/error");
+}
+
+app.MapGet("/", () =&gt; "Hello World!");
+app.MapGet("/boom", () =&gt; { throw new InvalidOperationException("Simulated error!"); });
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p>Từ .NET 6+, <code>WebApplication</code> tự động gọi <code>UseDeveloperExceptionPage()</code> trong
+          Development nên bạn thường không cần gọi tường minh. Tuy nhiên, viết rõ ra giúp code dễ đọc và dễ
+          kiểm soát hơn.</p>
+      </div>
+
+      <h3>2 — UseExceptionHandler với handler path</h3>
+      <p>Khi có lỗi, ASP.NET Core tự động chuyển hướng (re-execute) request sang đường dẫn được chỉ định. Phù hợp
+        khi dùng Razor Pages hoặc MVC Views để hiển thị trang lỗi.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddRazorPages();
+
+var app = builder.Build();
+
+app.UseExceptionHandler("/Error");   // re-execute sang /Error
+app.MapRazorPages();
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Error.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Logging;
+
+public class ErrorModel : PageModel
+{
+    private readonly ILogger&lt;ErrorModel&gt; _logger;
+
+    public ErrorModel(ILogger&lt;ErrorModel&gt; logger)
+    {
+        _logger = logger;
+    }
+
+    public string? ErrorMessage { get; private set; }
+
+    public void OnGet()
+    {
+        // Lấy thông tin ngoại lệ từ IExceptionHandlerFeature
+        var exceptionFeature = HttpContext.Features.Get&lt;IExceptionHandlerFeature&gt;();
+        if (exceptionFeature?.Error is { } ex)
+        {
+            _logger.LogCritical(ex, "Unhandled exception: {Message}", ex.Message);
+            ErrorMessage = ex.Message;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Error.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@page
+@model ErrorModel
+
+&lt;h2&gt;Hệ thống gặp sự cố&lt;/h2&gt;
+&lt;p&gt;@Model.ErrorMessage&lt;/p&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><code>IExceptionHandlerFeature</code> được middleware ghi vào <code>HttpContext.Features</code> trước
+          khi re-execute. Dùng <code>HttpContext.Features.Get&lt;IExceptionHandlerFeature&gt;()</code> để lấy
+          đối tượng ngoại lệ gốc và log/hiển thị thông tin cần thiết.</p>
+      </div>
+
+      <h3>3 — UseExceptionHandler với lambda (không cần endpoint riêng)</h3>
+      <p>Cách này phù hợp với API — trả về JSON thay vì HTML, không cần tạo Razor Page.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.UseExceptionHandler(errApp =&gt;
+{
+    errApp.Run(async context =&gt;
+    {
+        var exceptionFeature = context.Features.Get&lt;IExceptionHandlerFeature&gt;();
+        var logger = context.RequestServices
+            .GetRequiredService&lt;ILogger&lt;Program&gt;&gt;();
+
+        if (exceptionFeature is not null)
+        {
+            logger.LogCritical(exceptionFeature.Error,
+                "Unhandled exception at {Path}", exceptionFeature.Path);
+        }
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            status = 500,
+            message = "An internal server error occurred."
+        });
+    });
+});
+
+app.MapGet("/boom", () =&gt; { throw new InvalidOperationException("Lambda demo"); });
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>4 — IExceptionHandler interface (.NET 8+)</h3>
+      <p>Từ .NET 8, ASP.NET Core giới thiệu interface <code>IExceptionHandler</code> cho phép viết handler theo
+        kiểu class rõ ràng hơn, dễ test hơn, và hỗ trợ <strong>chuỗi handler</strong> (nhiều handler xếp nối
+        tiếp).</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Handlers/GlobalExceptionHandler.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+
+namespace MyApp.Handlers;
+
+public sealed class GlobalExceptionHandler : IExceptionHandler
+{
+    private readonly ILogger&lt;GlobalExceptionHandler&gt; _logger;
+
+    public GlobalExceptionHandler(ILogger&lt;GlobalExceptionHandler&gt; logger)
+    {
+        _logger = logger;
+    }
+
+    public async ValueTask&lt;bool&gt; TryHandleAsync(
+        HttpContext httpContext,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogCritical(exception,
+            "Exception occurred: {Message}", exception.Message);
+
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status500InternalServerError,
+            Title  = "Server Error",
+            Detail = exception.Message
+        };
+
+        httpContext.Response.StatusCode = problemDetails.Status.Value;
+        await httpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
+
+        // Trả về true = đã xử lý, không cần handler tiếp theo
+        return true;
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký IExceptionHandler implementation
+builder.Services.AddExceptionHandler&lt;GlobalExceptionHandler&gt;();
+// Cần AddProblemDetails nếu muốn dùng RFC 7807 Problem Details
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+
+// Kích hoạt middleware sử dụng IExceptionHandler đã đăng ký
+app.UseExceptionHandler();
+
+app.MapGet("/boom", () =&gt; { throw new ArgumentException("Bad argument!"); });
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><strong>Chuỗi handler:</strong> Có thể đăng ký nhiều <code>AddExceptionHandler&lt;T&gt;()</code>.
+          ASP.NET Core gọi chúng theo thứ tự đăng ký; handler nào trả về <code>true</code> thì dừng chuỗi.
+          Hữu ích khi muốn xử lý riêng từng loại ngoại lệ (ví dụ: <code>ValidationException</code> → 422,
+          <code>NotFoundException</code> → 404, còn lại → 500).</p>
+      </div>
+
+      <h3>5 — Problem Details (RFC 7807)</h3>
+      <p><code>AddProblemDetails()</code> tích hợp chuẩn RFC 7807 vào ASP.NET Core. Khi bật, framework tự
+        sinh JSON response theo định dạng chuẩn cho mọi HTTP error response.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddProblemDetails(options =&gt;
+{
+    // Tuỳ chỉnh thêm thông tin vào Problem Details (ví dụ: traceId)
+    options.CustomizeProblemDetails = ctx =&gt;
+    {
+        ctx.ProblemDetails.Extensions["traceId"] =
+            ctx.HttpContext.TraceIdentifier;
+    };
+});
+
+var app = builder.Build();
+app.UseExceptionHandler();
+app.UseStatusCodePages();   // xử lý 404, 405... không có body
+
+app.MapGet("/not-found", () =&gt; Results.NotFound());
+
+app.Run();</code></pre>
+      </div>
+
+      <p>Response JSON khi có lỗi sẽ trông như sau:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP 500 response body</span><span class="lang">json</span></div>
+        <pre><code>{
+  "type":    "https://tools.ietf.org/html/rfc7807",
+  "title":   "Server Error",
+  "status":  500,
+  "detail":  "Bad argument!",
+  "traceId": "00-4bf5122f344e2107-00f067aa0ba902b7-00"
+}</code></pre>
+      </div>
+
+      <h3>6 — UseStatusCodePages</h3>
+      <p><code>UseStatusCodePages()</code> xử lý các response có mã lỗi HTTP (4xx, 5xx) <em>nhưng không có body</em>
+        — điển hình là 404 do không có route khớp. Middleware này tự thêm body mặc định hoặc redirect sang
+        trang tùy chỉnh.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+
+app.UseExceptionHandler();
+
+// Thêm body cho 4xx/5xx không có body (vd: 404 route không tìm thấy)
+app.UseStatusCodePages();
+
+// Hoặc redirect sang trang cụ thể:
+// app.UseStatusCodePagesWithRedirects("/errors/{0}");
+
+// Hoặc re-execute sang endpoint khác:
+// app.UseStatusCodePagesWithReExecute("/errors/{0}");
+
+app.MapGet("/", () =&gt; "Hello!");
+
+app.Run();</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr>
+          <th>Middleware / API</th>
+          <th>Mục đích</th>
+          <th>Khi nào dùng</th>
+        </tr>
+        <tr>
+          <td><code>UseDeveloperExceptionPage()</code></td>
+          <td>Trang lỗi chi tiết cho developer</td>
+          <td>Chỉ môi trường Development</td>
+        </tr>
+        <tr>
+          <td><code>UseExceptionHandler("/path")</code></td>
+          <td>Re-execute sang endpoint/page lỗi</td>
+          <td>MVC/Razor Pages — Production</td>
+        </tr>
+        <tr>
+          <td><code>UseExceptionHandler(lambda)</code></td>
+          <td>Xử lý lỗi inline, trả JSON</td>
+          <td>Minimal API / Web API</td>
+        </tr>
+        <tr>
+          <td><code>IExceptionHandler</code> + <code>AddExceptionHandler&lt;T&gt;</code></td>
+          <td>Handler theo class, hỗ trợ chuỗi</td>
+          <td>.NET 8+, khi cần phân loại exception</td>
+        </tr>
+        <tr>
+          <td><code>AddProblemDetails()</code></td>
+          <td>Chuẩn hóa response lỗi RFC 7807</td>
+          <td>API trả JSON — nên bật mặc định</td>
+        </tr>
+        <tr>
+          <td><code>UseStatusCodePages()</code></td>
+          <td>Thêm body cho 4xx/5xx trống</td>
+          <td>Khi route không khớp (404) không có body</td>
+        </tr>
+      </table>
+
+      <h3>Tổng hợp: cấu hình khuyến nghị cho ứng dụng .NET 9</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddExceptionHandler&lt;GlobalExceptionHandler&gt;();
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    // Developer Exception Page — bật sẵn trong Development nhưng viết rõ cho dễ đọc
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    // Production: dùng IExceptionHandler đã đăng ký
+    app.UseExceptionHandler();
+    app.UseStatusCodePages();
+}
+
+app.MapGet("/", () =&gt; Results.Ok("OK"));
+app.MapGet("/error", () =&gt; { throw new Exception("Demo error"); });
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><strong>Lưu ý thứ tự middleware:</strong> <code>UseExceptionHandler()</code> / <code>UseDeveloperExceptionPage()</code>
+          phải được gọi <strong>trước</strong> tất cả middleware khác trong pipeline để đảm bảo bắt được mọi
+          ngoại lệ, kể cả lỗi từ middleware routing hay authentication.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-26.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">26 · Logging</div>
+      </a>
+      <a class="next" href="lesson-28.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">28 · Securing Web App</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

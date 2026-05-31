@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 14 — Razor Pages | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 14 — Razor Pages</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Tại sao dùng Razor Pages</a></li>
+      <li><a href="#s2">2. Tạo ứng dụng Razor Pages đầu tiên</a></li>
+      <li><a href="#s3">3. Route template cơ bản</a></li>
+      <li><a href="#s4">4. Cách Razor Pages hoạt động</a></li>
+      <li><a href="#s5">5. Tùy chỉnh Route Template</a></li>
+      <li><a href="#s6">6. Route Parameters</a></li>
+      <li><a href="#s7">7. Page Handler Selection</a></li>
+      <li><a href="#s8">8. Implicit Page Handlers</a></li>
+      <li><a href="#s9">9. Model Binding</a></li>
+      <li><a href="#s10">10. Model Validation</a></li>
+      <li><a href="#s11">11. Producing Results</a></li>
+      <li><a href="#s12">12. Layout, Sections, _ViewStart, _ViewImports</a></li>
+      <li><a href="#s13">13. Partial View &amp; View Component</a></li>
+      <li><a href="#s14">14. Razor Pages vs MVC</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 14</span>
+      <h1>Razor Pages</h1>
+      <p class="lead">Mô hình Razor Pages trong ASP.NET Core — route template dựa trên tên file, page handler, model binding, validation, producing results, layout/sections, partial view và view component.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Tại sao dùng Razor Pages</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Why Razor Pages</em></p>
+
+      <p>ASP.NET Core cung cấp nhiều mô hình để xây dựng ứng dụng web: Minimal API, MVC, và <strong>Razor Pages</strong>. Trong khi MVC hướng tới <em>action method</em> (endpoint xử lý yêu cầu), Razor Pages hướng tới <em>trang</em> (page) — phản ánh đúng cách người dùng tương tác với ứng dụng web: chuyển từ trang này sang trang khác.</p>
+
+      <h3>Vấn đề với MVC khi xây dựng ứng dụng web truyền thống</h3>
+      <p>Với MVC, để tìm View của một controller bạn phải biết quy ước: <code>Views/{ControllerName}/{ActionName}.cshtml</code>. Controller, Action, và View nằm ở ba vị trí khác nhau — thiết kế tốt về mặt kỹ thuật nhưng đôi khi gây khó khăn khi nhìn vào yêu cầu nghiệp vụ, vốn thường được mô tả theo từng <em>trang</em> (page).</p>
+
+      <h3>Razor Pages là gì</h3>
+      <p>Razor Pages nhóm <strong>giao diện</strong> (<code>.cshtml</code>) và <strong>logic xử lý</strong> (<code>.cshtml.cs</code> — PageModel) vào cùng một cặp file, một cặp tương ứng một trang web. Điều này làm cho cấu trúc project phản ánh trực tiếp yêu cầu nghiệp vụ: mỗi trang là một đơn vị độc lập, dễ tìm, dễ bảo trì.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Microsoft khuyến nghị Razor Pages là công nghệ mặc định để xây dựng các ứng dụng web server-side rendering trong ASP.NET Core. MVC vẫn được hỗ trợ đầy đủ nhưng phù hợp hơn với các project lớn, phức tạp cần tách biệt rõ ràng.</p>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>MVC</th><th>Razor Pages</th></tr>
+        <tr><td>Đơn vị tổ chức</td><td>Controller / Action</td><td>Page / PageModel</td></tr>
+        <tr><td>Vị trí logic</td><td><code>Controllers/</code></td><td>Cùng file <code>.cshtml.cs</code></td></tr>
+        <tr><td>Phù hợp với</td><td>Project lớn, API, tái sử dụng cao</td><td>CRUD đơn giản, page-focused</td></tr>
+        <tr><td>Quy ước route</td><td>Theo controller/action</td><td>Theo đường dẫn file</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Tạo ứng dụng Razor Pages đầu tiên</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Create Our First Razor Pages App</em></p>
+
+      <p>Razor Pages không yêu cầu template riêng — bạn có thể bắt đầu từ template <em>Empty</em> và thêm hỗ trợ Razor Pages vào <code>Program.cs</code>.</p>
+
+      <h3>Cấu hình Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký các dịch vụ cần thiết cho Razor Pages
+builder.Services.AddRazorPages();
+
+var app = builder.Build();
+
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    // Đăng ký tất cả Razor Pages làm endpoint
+    endpoints.MapRazorPages();
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Từ .NET 6 trở đi bạn có thể dùng cú pháp ngắn hơn: <code>app.MapRazorPages()</code> trực tiếp trên <code>app</code> mà không cần <code>UseEndpoints</code>. Cả hai cách đều hoạt động tương đương.</p>
+      </div>
+
+      <h3>Cấu trúc thư mục</h3>
+      <p>Theo quy ước, toàn bộ Razor Pages được đặt trong thư mục <code>Pages/</code> ở gốc project. Mỗi trang gồm hai file:</p>
+      <ul>
+        <li><code>Pages/Index.cshtml</code> — template Razor, chứa HTML và biểu thức <code>@</code></li>
+        <li><code>Pages/Index.cshtml.cs</code> — PageModel, chứa logic C#</li>
+      </ul>
+
+      <h3>File Razor Page tối giản</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page
+@model WebApp.Pages.IndexModel
+
+&lt;h3&gt;Hello world!&lt;/h3&gt;</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Index.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace WebApp.Pages;
+
+public class IndexModel : PageModel
+{
+    public void OnGet()
+    {
+        // Xử lý GET request
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> Directive <code>@page</code> là yếu tố quan trọng nhất — nó đánh dấu file <code>.cshtml</code> này là một Razor Page (không phải Razor View thông thường trong MVC). Thiếu <code>@page</code>, file sẽ không được xử lý như một page endpoint.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Route template cơ bản</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Route Matching Basics — Route Templates</em></p>
+
+      <p>Razor Pages tự động sinh route template dựa trên <strong>đường dẫn file</strong> tương đối so với thư mục <code>Pages/</code>. Đây là quy ước mạnh mẽ giúp không cần cấu hình route thủ công cho phần lớn các trang.</p>
+
+      <h3>Quy tắc ánh xạ file → route</h3>
+      <table class="tbl">
+        <tr><th>Đường dẫn file</th><th>Route URL</th></tr>
+        <tr><td><code>Pages/Index.cshtml</code></td><td><code>/</code> hoặc <code>/Index</code></td></tr>
+        <tr><td><code>Pages/Employees/Index.cshtml</code></td><td><code>/Employees</code> hoặc <code>/Employees/Index</code></td></tr>
+        <tr><td><code>Pages/Employees/Add.cshtml</code></td><td><code>/Employees/Add</code></td></tr>
+        <tr><td><code>Pages/Employees/Edit.cshtml</code></td><td><code>/Employees/Edit</code></td></tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <strong>Ngoại lệ đặc biệt:</strong> Trang có tên <code>Index</code> được ánh xạ thêm route ngắn — không cần ghi <code>/Index</code> ở cuối URL. Ví dụ: <code>/Employees</code> và <code>/Employees/Index</code> đều trỏ đến cùng trang <code>Pages/Employees/Index.cshtml</code>.</p>
+      </div>
+
+      <h3>Cơ chế hoạt động</h3>
+      <p>Quá trình xử lý một request Razor Pages tuân theo đúng pipeline mà bạn đã biết:</p>
+      <ol class="steps">
+        <li>Endpoint middleware đăng ký tất cả Razor Pages vào routing table khi ứng dụng khởi động.</li>
+        <li>Routing middleware nhận request, so sánh URL với route templates đã đăng ký.</li>
+        <li>Razor Page khớp được chọn, endpoint middleware thực thi page handler tương ứng.</li>
+        <li>View engine kết hợp PageModel với template <code>.cshtml</code> để sinh HTML trả về client.</li>
+      </ol>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Cách Razor Pages hoạt động</h2>
+      <p class="subvideo-meta">Bài 4 · <em>How Razor Pages Work</em></p>
+
+      <p>Dù Razor Pages có giao diện "hướng trang", bên dưới nó vẫn hoạt động theo cùng cơ chế endpoint handler của ASP.NET Core. Sự khác biệt chính nằm ở cách view engine biết page nào cần render.</p>
+
+      <h3>Page Handler — endpoint thực sự</h3>
+      <p>Trong MVC, endpoint handler là <em>action method</em>. Trong Razor Pages, endpoint handler là <strong>page handler</strong> — các method trong PageModel tuân theo quy ước đặt tên <code>On{HttpVerb}</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Add.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace WebApp.Pages.Employees;
+
+public class AddModel : PageModel
+{
+    // Xử lý GET /Employees/Add
+    public void OnGet()
+    {
+    }
+
+    // Xử lý POST /Employees/Add
+    public void OnPost()
+    {
+    }
+}</code></pre>
+      </div>
+
+      <h3>Tại sao page handler có thể trả về void</h3>
+      <p>Trong MVC, action method phải trả về <code>IActionResult</code> vì framework cần biết <em>view nào</em> cần render. Với Razor Pages, view (file <code>.cshtml</code>) luôn được <strong>ghép cặp cố định</strong> với PageModel, nên framework đã biết phải render gì mà không cần action method chỉ định. Do đó, page handler có thể trả về <code>void</code> — tương đương với trả về <code>Page()</code>.</p>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> Dù page handler trả về <code>void</code>, cuối cùng vẫn là <strong>view engine</strong> (không phải page handler) tạo ra HTTP response. View engine nhận kết quả từ handler, kết hợp PageModel với template Razor để sinh HTML.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Tùy chỉnh Route Template</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Customize Route Template</em></p>
+
+      <p>Mặc dù quy ước dựa trên đường dẫn file rất tiện lợi, đôi khi bạn muốn URL khác với tên file. Razor Pages cho phép tùy chỉnh route template thông qua directive <code>@page</code>.</p>
+
+      <h3>Cách 1 — Thêm segment vào route mặc định</h3>
+      <p>Thêm segment sau <code>@page</code> sẽ nối thêm vào cuối route mặc định:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Add.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page "confirm"
+@model WebApp.Pages.Employees.AddModel
+
+&lt;h3&gt;Add Employee&lt;/h3&gt;</code></pre>
+      </div>
+
+      <p>Bây giờ trang này chỉ khớp với <code>/Employees/Add/confirm</code>, không còn khớp với <code>/Employees/Add</code>.</p>
+
+      <h3>Cách 2 — Thay thế hoàn toàn route template</h3>
+      <p>Bắt đầu bằng <code>/</code> để thay thế hoàn toàn route template mặc định:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Add.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page "/add-employee"
+@model WebApp.Pages.Employees.AddModel
+
+&lt;h3&gt;Add Employee&lt;/h3&gt;</code></pre>
+      </div>
+
+      <p>Với cấu hình này, trang được truy cập tại <code>/add-employee</code> thay vì <code>/Employees/Add</code>.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Trong thực tế, hầu hết dự án giữ route mặc định (theo tên file) để dễ dự đoán. Tùy chỉnh route chỉ nên dùng khi có yêu cầu URL cụ thể từ phía sản phẩm hoặc khi cần tích hợp với hệ thống cũ.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Route Parameters</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Route Parameters in Razor Pages</em></p>
+
+      <p>Route parameter trong Razor Pages được khai báo trong directive <code>@page</code>, sử dụng cú pháp <code>{param}</code> giống MVC. Có hai cách nhận giá trị route parameter trong page handler.</p>
+
+      <h3>Cách 1 — Tham số của page handler</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page "{id:int?}"
+@model WebApp.Pages.EmployeesModel
+
+&lt;h3&gt;Employee detail&lt;/h3&gt;
+Employee Id: @Model.Id</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs — Cách 1</span><span class="lang">csharp</span></div>
+        <pre><code>public class EditModel : PageModel
+{
+    // Nhận id trực tiếp qua tham số method
+    public void OnGet(int? id)
+    {
+        // id có giá trị từ route /Employees/Edit/42
+    }
+}</code></pre>
+      </div>
+
+      <h3>Cách 2 — Property với [BindProperty(SupportsGet = true)]</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs — Cách 2 (từ ZIP thực tế)</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace WebApp.Pages;
+
+public class EmployeesModel : PageModel
+{
+    // SupportsGet = true cho phép bind từ GET request (route parameter)
+    [BindProperty(SupportsGet = true)]
+    public int? Id { get; set; }
+
+    public IActionResult OnGet()
+    {
+        // Id đã được bind từ route /Employees/Edit/{id}
+        return Page();
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Mặc định <code>[BindProperty]</code> chỉ bind cho POST. Với GET request (route parameter, query string), phải thêm <code>SupportsGet = true</code>. Ưu điểm của property so với tham số method là property có thể truy cập từ bất kỳ đâu trong PageModel và trong template Razor qua <code>@Model.Id</code>.</p>
+      </div>
+
+      <h3>Route constraints</h3>
+      <p>Mọi route constraint bạn đã học đều áp dụng được trong <code>@page</code>:</p>
+      <table class="tbl">
+        <tr><th>Cú pháp</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>@page "{id:int}"</code></td><td>Bắt buộc, kiểu int</td></tr>
+        <tr><td><code>@page "{id:int?}"</code></td><td>Tùy chọn, kiểu int</td></tr>
+        <tr><td><code>@page "{slug:alpha}"</code></td><td>Bắt buộc, chỉ chữ cái</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Page Handler Selection</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Page Handler Selection</em></p>
+
+      <p>Một PageModel có thể chứa nhiều page handler. Framework chọn handler dựa trên <strong>tổ hợp HTTP verb + tên handler</strong> theo quy ước đặt tên: <code>On{Verb}[{HandlerName}]</code>.</p>
+
+      <h3>Quy ước đặt tên page handler</h3>
+      <table class="tbl">
+        <tr><th>Tên method</th><th>Kích hoạt khi</th></tr>
+        <tr><td><code>OnGet()</code></td><td>GET request đến trang này</td></tr>
+        <tr><td><code>OnPost()</code></td><td>POST request đến trang này</td></tr>
+        <tr><td><code>OnPostSave()</code></td><td>POST với <code>?handler=save</code></td></tr>
+        <tr><td><code>OnPostDelete()</code></td><td>POST với <code>?handler=delete</code></td></tr>
+        <tr><td><code>OnGetFirst()</code></td><td>GET với <code>?handler=first</code></td></tr>
+      </table>
+
+      <h3>Ví dụ thực tế — hai form POST trên cùng trang</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml (trích từ ZIP)</span><span class="lang">razor</span></div>
+        <pre><code>@page "{id:int?}"
+@model WebApp.Pages.EmployeesModel
+
+&lt;!-- Form Save: POST /Employees/Edit/9?handler=save --&gt;
+&lt;form method="post" action="/employees/edit/@Model.Id?handler=save"&gt;
+    @Html.AntiForgeryToken()
+    &lt;input type="hidden" name="inputmodel.id" value="@Model.Id" /&gt;
+    Name: &lt;input type="text" name="inputmodel.name" value="@Model.InputModel?.Name" /&gt;
+    &lt;button type="submit"&gt;Save&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;!-- Form Delete: POST /Employees/Edit/9?handler=delete --&gt;
+&lt;form method="post" action="/employees/edit/@Model.Id?handler=delete"&gt;
+    @Html.AntiForgeryToken()
+    &lt;button type="submit"&gt;Delete&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs (trích từ ZIP)</span><span class="lang">csharp</span></div>
+        <pre><code>public class EmployeesModel : PageModel
+{
+    [BindProperty(SupportsGet = true)]
+    public int? Id { get; set; }
+
+    [BindProperty]
+    public InputModel? InputModel { get; set; }
+
+    public IActionResult OnGet() =&gt; Page();
+
+    // Xử lý form Save
+    public IActionResult OnPostSave()
+    {
+        if (!ModelState.IsValid)
+        {
+            InputModel!.ErrorMessages = GetErrors();
+            return Page();
+        }
+        // lưu dữ liệu ...
+        return RedirectToPage("Index");
+    }
+
+    // Xử lý form Delete
+    public IActionResult OnPostDelete()
+    {
+        // xóa dữ liệu ...
+        return RedirectToPage("Index");
+    }
+
+    private List&lt;string&gt; GetErrors()
+    {
+        var errors = new List&lt;string&gt;();
+        foreach (var value in ModelState.Values)
+            foreach (var error in value.Errors)
+                errors.Add(error.ErrorMessage);
+        return errors;
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Razor Pages bật <strong>anti-forgery token validation</strong> mặc định cho mọi POST request. Phải thêm <code>@Html.AntiForgeryToken()</code> vào mỗi form, hoặc dùng Tag Helper <code>&lt;form&gt;</code> (tự động thêm token). Nếu thiếu, server sẽ trả về lỗi <code>400 Bad Request</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Implicit Page Handlers</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Implicit Page Handlers</em></p>
+
+      <p>Khi một request đến trang Razor Pages nhưng không tìm thấy page handler phù hợp (đúng HTTP verb và handler name), ASP.NET Core không báo lỗi mà tự động sinh ra một <strong>implicit page handler</strong>.</p>
+
+      <h3>Hành vi của implicit page handler</h3>
+      <p>Implicit handler ngầm định:</p>
+      <ul>
+        <li>Được tạo động bởi framework khi không có handler tường minh nào khớp.</li>
+        <li>Không thực thi bất kỳ logic nào.</li>
+        <li>Render ngay template Razor của trang đó (tương đương <code>return Page()</code>).</li>
+      </ul>
+
+      <h3>Ví dụ</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Add.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class AddModel : PageModel
+{
+    // Chỉ có OnPostSave, không có OnPostSaveOne
+    public IActionResult OnPostSave()
+    {
+        // ...
+        return RedirectToPage("Index");
+    }
+}</code></pre>
+      </div>
+
+      <p>Nếu form submit đến <code>?handler=saveone</code> (không khớp <code>OnPostSaveOne</code>), framework sẽ sinh implicit handler và vẫn render trang bình thường mà không báo lỗi. Đây là tính năng thiết kế để tránh crash khi handler tên không khớp.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Implicit handler hữu ích khi bạn muốn trang render bình thường ngay cả khi POST không có handler tường minh (ví dụ form tìm kiếm chỉ cần reload trang). Tuy nhiên, hãy cẩn thận để không vô tình bỏ sót logic do tên handler đánh máy sai.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Model Binding trong Razor Pages</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Model Binding in Razor Pages</em></p>
+
+      <p>Model binding trong Razor Pages về bản chất <strong>giống hệt MVC</strong> — framework trích xuất dữ liệu từ HTTP request (form, route, query string, body) và gán vào kiểu C#. Điểm khác biệt chủ yếu là cách khai báo binding target.</p>
+
+      <h3>Binding qua tham số page handler</h3>
+      <p>Giống action method trong MVC, page handler có thể nhận dữ liệu qua tham số:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class EditModel : PageModel
+{
+    public IActionResult OnPostSave(int id, string name)
+    {
+        // id, name được bind từ form hoặc route
+        return RedirectToPage("Index");
+    }
+}</code></pre>
+      </div>
+
+      <h3>Binding qua property (cách ưa dùng)</h3>
+      <p>Cách phổ biến hơn trong Razor Pages là dùng property với <code>[BindProperty]</code>. Property này khả dụng toàn bộ PageModel và trong template Razor, không giới hạn trong một handler:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs (từ ZIP)</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace WebApp.Pages;
+
+public class EmployeesModel : PageModel
+{
+    // Bind từ cả GET (route) lẫn POST
+    [BindProperty(SupportsGet = true)]
+    public int? Id { get; set; }
+
+    // Bind từ POST (form body)
+    [BindProperty]
+    public InputModel? InputModel { get; set; }
+
+    public IActionResult OnGet() =&gt; Page();
+
+    public IActionResult OnPostSave()
+    {
+        // InputModel.Id, InputModel.Name đã được bind tự động
+        if (!ModelState.IsValid)
+            return Page();
+
+        return RedirectToPage("Index");
+    }
+}
+
+public class InputModel
+{
+    public int? Id { get; set; }
+
+    [Required]
+    public string? Name { get; set; }
+
+    public List&lt;string&gt;? ErrorMessages { get; set; }
+}</code></pre>
+      </div>
+
+      <h3>Binding sources — ưu tiên như MVC</h3>
+      <p>Thứ tự ưu tiên nguồn binding và các attribute như <code>[FromForm]</code>, <code>[FromQuery]</code>, <code>[FromRoute]</code>, <code>[FromBody]</code> hoạt động <strong>y hệt MVC</strong>. Bạn có thể áp dụng trực tiếp lên property.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Attribute <code>[BindProperties]</code> (số nhiều) đặt ở cấp class sẽ áp dụng binding cho tất cả public property trong PageModel cùng lúc. Tuy nhiên, nên dùng <code>[BindProperty]</code> riêng lẻ trên từng property để tránh bind nhầm những property không mong muốn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Model Validation trong Razor Pages</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Model Validations for Razor Pages</em></p>
+
+      <p>Workflow validation trong Razor Pages giống hệt MVC: data annotation → ModelState → page handler kiểm tra <code>ModelState.IsValid</code>.</p>
+
+      <h3>Pipeline xử lý request (có validation)</h3>
+      <ol class="steps">
+        <li><strong>Routing middleware</strong> chọn Razor Page khớp với URL.</li>
+        <li><strong>Model binding</strong> trích xuất dữ liệu từ request vào binding model.</li>
+        <li><strong>Model validation</strong> chạy data annotation validators và ghi kết quả vào <code>ModelState</code>.</li>
+        <li><strong>Page handler</strong> thực thi — lập trình viên phải chủ động kiểm tra <code>ModelState.IsValid</code>.</li>
+        <li><strong>View engine</strong> render HTML kết quả.</li>
+      </ol>
+
+      <h3>Khai báo validation với Data Annotations</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">InputModel (trong Edit.cshtml.cs từ ZIP)</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+public class InputModel
+{
+    public int? Id { get; set; }
+
+    [Required(ErrorMessage = "Tên nhân viên là bắt buộc.")]
+    [StringLength(100, MinimumLength = 2)]
+    public string? Name { get; set; }
+
+    public List&lt;string&gt;? ErrorMessages { get; set; }
+}</code></pre>
+      </div>
+
+      <h3>Xử lý ModelState trong page handler</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public IActionResult OnPostSave()
+{
+    if (!ModelState.IsValid)
+    {
+        // Thu thập lỗi từ ModelState để hiển thị trên trang
+        InputModel!.ErrorMessages = ModelState.Values
+            .SelectMany(v =&gt; v.Errors)
+            .Select(e =&gt; e.ErrorMessage)
+            .ToList();
+
+        return Page(); // render lại trang với thông báo lỗi
+    }
+
+    // Logic lưu dữ liệu
+    return RedirectToPage("Index");
+}</code></pre>
+      </div>
+
+      <h3>Hiển thị lỗi trên template Razor</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml (trích từ ZIP)</span><span class="lang">razor</span></div>
+        <pre><code>@if (Model is not null &amp;&amp;
+     Model.InputModel is not null &amp;&amp;
+     Model.InputModel.ErrorMessages is not null)
+{
+    &lt;ul style="color:red"&gt;
+        @foreach (var errorMessage in Model.InputModel.ErrorMessages)
+        {
+            &lt;li&gt;@errorMessage&lt;/li&gt;
+        }
+    &lt;/ul&gt;
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Khác với Minimal API (lỗi validation ném exception ngay), MVC và Razor Pages <strong>không tự động báo lỗi</strong> — framework chỉ ghi vào <code>ModelState</code>. Lập trình viên phải nhớ kiểm tra <code>ModelState.IsValid</code> trước khi tiến hành logic nghiệp vụ.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 11 ============ -->
+    <section class="section" id="s11">
+      <h2><span class="num">11</span> Producing Results</h2>
+      <p class="subvideo-meta">Bài 11 · <em>Producing Results with Razor Pages</em></p>
+
+      <p>Page handler có thể trả về các loại kết quả khác nhau bằng cách đổi kiểu trả về thành <code>IActionResult</code> — giống action method trong MVC. Razor Pages không có <code>IPageResult</code> riêng mà dùng chung hệ thống <code>IActionResult</code>.</p>
+
+      <h3>Các loại kết quả phổ biến</h3>
+      <table class="tbl">
+        <tr><th>Cú pháp</th><th>Kết quả</th><th>Khi nào dùng</th></tr>
+        <tr><td><code>void</code> / không return</td><td>Render trang hiện tại</td><td>Handler chỉ đọc dữ liệu, không điều hướng</td></tr>
+        <tr><td><code>return Page()</code></td><td>Render trang hiện tại</td><td>Xử lý lỗi validation, muốn ở lại cùng trang</td></tr>
+        <tr><td><code>return RedirectToPage("Index")</code></td><td>Redirect 302 sang trang khác</td><td>Sau khi lưu/xóa thành công (PRG pattern)</td></tr>
+        <tr><td><code>return RedirectToPage("Edit", new { id = 5 })</code></td><td>Redirect sang trang có route value</td><td>Redirect sang trang có tham số</td></tr>
+        <tr><td><code>return Content("...")</code></td><td>Plain text</td><td>Ít dùng trong Razor Pages</td></tr>
+      </table>
+
+      <h3>Ví dụ — luồng xử lý form đầy đủ</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class EmployeesModel : PageModel
+{
+    [BindProperty(SupportsGet = true)]
+    public int? Id { get; set; }
+
+    [BindProperty]
+    public InputModel? InputModel { get; set; }
+
+    public IActionResult OnGet() =&gt; Page();
+
+    public IActionResult OnPostSave()
+    {
+        if (!ModelState.IsValid)
+        {
+            InputModel!.ErrorMessages = GetErrors();
+            return Page(); // ở lại trang, hiển thị lỗi
+        }
+
+        // lưu dữ liệu ...
+        return RedirectToPage("Index"); // về danh sách sau khi thành công
+    }
+
+    public IActionResult OnPostDelete()
+    {
+        // xóa dữ liệu ...
+        return RedirectToPage("Index");
+    }
+
+    private List&lt;string&gt; GetErrors() =&gt;
+        ModelState.Values
+            .SelectMany(v =&gt; v.Errors)
+            .Select(e =&gt; e.ErrorMessage)
+            .ToList();
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> <code>Page()</code> và <code>void</code> đều cho kết quả như nhau — render template <code>.cshtml</code> liên kết với PageModel. Dùng <code>IActionResult</code> + <code>Page()</code> khi bạn cần <em>phân nhánh</em>: đôi khi render trang, đôi khi redirect.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 12 ============ -->
+    <section class="section" id="s12">
+      <h2><span class="num">12</span> Layout, Sections, _ViewStart, _ViewImports</h2>
+      <p class="subvideo-meta">Bài 12 · <em>Layout, Sections, _ViewStart, _ViewImport</em></p>
+
+      <p>Razor Pages và MVC chia sẻ chung engine Razor, do đó <strong>Layout, Sections, _ViewStart, _ViewImports hoạt động y hệt</strong>. Điểm khác biệt duy nhất là quy ước đặt vị trí file trong thư mục <code>Pages/</code> thay vì <code>Views/</code>.</p>
+
+      <h3>Layout</h3>
+      <p>File layout đặt trong <code>Pages/Shared/_Layout.cshtml</code> theo quy ước:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Shared/_Layout.cshtml (từ ZIP)</span><span class="lang">razor</span></div>
+        <pre><code>&lt;html&gt;
+    &lt;head&gt;&lt;/head&gt;
+    &lt;body&gt;
+        &lt;div&gt;Header Bar&lt;/div&gt;
+        &lt;div&gt;
+            @RenderSection("messagebar", required: false)
+        &lt;/div&gt;
+
+        &lt;br /&gt;&lt;br /&gt;
+        &lt;div&gt;
+            @RenderBody()
+        &lt;/div&gt;
+    &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>_ViewStart — gán layout cho tất cả trang</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/_ViewStart.cshtml (từ ZIP)</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    Layout = "_Layout";
+}</code></pre>
+      </div>
+
+      <p>File <code>_ViewStart.cshtml</code> đặt ở <code>Pages/</code> sẽ tự động được thực thi trước mỗi Razor Page trong cùng thư mục và các thư mục con — giúp gán layout một lần cho toàn bộ ứng dụng.</p>
+
+      <h3>Sections — thêm nội dung tùy chọn vào layout</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Index.cshtml (từ ZIP)</span><span class="lang">razor</span></div>
+        <pre><code>@page
+@model WebApp.Pages.Employees.IndexModel
+
+&lt;h3&gt;Employees&lt;/h3&gt;
+
+@section messagebar {
+    &lt;p&gt;This is a default message.&lt;/p&gt;
+}</code></pre>
+      </div>
+
+      <h3>_ViewImports — using tập trung</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/_ViewImports.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@using WebApp.Pages
+@namespace WebApp.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Khi kết hợp Razor Pages và MVC trong cùng project, có thể dùng chung một file <code>_Layout.cshtml</code> đặt ở thư mục gốc và tham chiếu bằng đường dẫn tuyệt đối. Tuy nhiên <code>_ViewImports</code> không thể dùng chung — mỗi bên cần file riêng trong thư mục <code>Pages/</code> và <code>Views/</code> tương ứng.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 13 ============ -->
+    <section class="section" id="s13">
+      <h2><span class="num">13</span> Partial View &amp; View Component</h2>
+      <p class="subvideo-meta">Bài 13 · <em>PartialView and ViewComponent</em></p>
+
+      <p>Componentization trong Razor Pages dùng đúng hai kỹ thuật đã học ở MVC: <strong>Partial View</strong> và <strong>View Component</strong>. Không có công nghệ mới — chỉ có một vài thay đổi nhỏ về quy ước thư mục.</p>
+
+      <h3>Partial View</h3>
+      <p>Đặt partial view trong thư mục của page (hoặc <code>Pages/Shared/</code>). Tên file bắt đầu bằng dấu gạch dưới <code>_</code> theo quy ước:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/_MyPartialView.cshtml (từ ZIP)</span><span class="lang">razor</span></div>
+        <pre><code>&lt;i&gt;This is my message: @Model.Id&lt;/i&gt;</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Sử dụng partial view trong Razor Page</span><span class="lang">razor</span></div>
+        <pre><code>@page "{id:int?}"
+@model WebApp.Pages.EmployeesModel
+
+&lt;h3&gt;Employee detail&lt;/h3&gt;
+
+@* Truyền Model làm dữ liệu cho partial view *@
+@await Html.PartialAsync("_MyPartialView", Model)</code></pre>
+      </div>
+
+      <h3>View Component</h3>
+      <p>Quy ước thư mục: <code>Pages/Shared/Components/{ComponentName}/Default.cshtml</code> (thay vì <code>Views/Shared/Components/...</code> trong MVC). Mọi thứ còn lại giống hệt.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Shared/Components/MyViewComponent/MyViewComponent.cs (từ ZIP)</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+
+namespace WebApp.Pages.Shared.Components.MyViewComponent;
+
+[ViewComponent(Name = "MyViewComponent")]
+public class MyViewComponent : ViewComponent
+{
+    public IViewComponentResult Invoke(string message)
+    {
+        ViewData["message"] = $"My message: {message}";
+        return View(); // render Default.cshtml
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Shared/Components/MyViewComponent/Default.cshtml (từ ZIP)</span><span class="lang">razor</span></div>
+        <pre><code>&lt;div&gt;
+    &lt;p&gt;Message from View Component:&lt;/p&gt;
+    @ViewData["message"]
+&lt;/div&gt;</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Sử dụng View Component trong Razor Page</span><span class="lang">razor</span></div>
+        <pre><code>@page
+@model WebApp.Pages.Employees.IndexModel
+
+&lt;h3&gt;Employees&lt;/h3&gt;
+
+@* Gọi View Component và truyền tham số *@
+@await Component.InvokeAsync("MyViewComponent", new { message = "Index message" })</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Nếu tên class kết thúc bằng <code>ViewComponent</code> (ví dụ <code>MyViewComponent</code>), framework tự suy ra tên component là <code>My</code>. Để tránh nhầm lẫn, dùng attribute <code>[ViewComponent(Name = "MyViewComponent")]</code> để đặt tên rõ ràng như trong ví dụ trên.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 14 ============ -->
+    <section class="section" id="s14">
+      <h2><span class="num">14</span> Razor Pages vs MVC</h2>
+      <p class="subvideo-meta">Bài 14 · <em>Razor Pages vs MVC</em></p>
+
+      <p>Sau khi học xong Razor Pages, hãy so sánh hai mô hình một cách khách quan để biết khi nào nên chọn cái nào.</p>
+
+      <h3>Luồng xử lý request: MVC</h3>
+      <ol class="steps">
+        <li>Browser gửi HTTP request.</li>
+        <li>Framework khởi tạo <strong>Controller</strong> và gọi <strong>Action method</strong>.</li>
+        <li>Action method điều phối, gọi services, nạp dữ liệu vào <strong>Model</strong> (object bên ngoài controller).</li>
+        <li>Action method trả về <code>ViewResult</code>, truyền Model vào <strong>View</strong>.</li>
+        <li>View engine render HTML và trả về response.</li>
+      </ol>
+
+      <h3>Luồng xử lý request: Razor Pages</h3>
+      <ol class="steps">
+        <li>Browser gửi HTTP request.</li>
+        <li>Framework khởi tạo <strong>PageModel</strong> và gọi <strong>Page handler</strong>.</li>
+        <li>Page handler điều phối, gọi services, nạp dữ liệu vào <strong>property của chính PageModel</strong>.</li>
+        <li>Framework render <strong>Razor Page</strong> đã ghép cặp với PageModel.</li>
+        <li>View engine render HTML và trả về response.</li>
+      </ol>
+
+      <h3>Sự khác biệt cốt lõi</h3>
+      <p>Trong MVC, <strong>Controller</strong> chỉ làm nhiệm vụ điều phối (coordinator), còn <strong>Model</strong> là object độc lập chứa dữ liệu. Hai trách nhiệm này được tách biệt rõ ràng.</p>
+      <p>Trong Razor Pages, <strong>PageModel</strong> đảm nhiệm <em>cả hai</em> vai trò: vừa là controller (qua page handler), vừa là model (qua các property). Điều này làm mờ đi sự phân tách.</p>
+
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>MVC</th><th>Razor Pages</th></tr>
+        <tr><td>Phân tách trách nhiệm</td><td>Rõ ràng (Controller / Model / View)</td><td>PageModel kiêm Controller + Model</td></tr>
+        <tr><td>Định hướng</td><td>Kỹ thuật (action-oriented)</td><td>Trang (page-oriented)</td></tr>
+        <tr><td>Phù hợp yêu cầu nghiệp vụ</td><td>Cần ánh xạ thủ công requirement → controller</td><td>Requirement theo trang → tìm ngay file page</td></tr>
+        <tr><td>Bảo trì dài hạn</td><td>Cấu trúc rõ ràng, dễ mở rộng</td><td>Dễ tìm file theo tính năng, dễ bàn giao</td></tr>
+        <tr><td>Phù hợp project</td><td>Lớn, phức tạp, cần tái sử dụng cao</td><td>Nhỏ-vừa, CRUD, tập trung vào trang</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Kết luận:</strong> Không có mô hình nào "tốt hơn" tuyệt đối. MVC phù hợp khi cần separation of concerns chặt chẽ và khả năng mở rộng. Razor Pages phù hợp khi yêu cầu nghiệp vụ được đặc tả theo từng trang và cần phát triển nhanh. Trong thực tế, nhiều project lớn kết hợp cả hai trong cùng một ứng dụng ASP.NET Core.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-13.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">13 · MVC — Componentization &amp; Interactivity</div>
+      </a>
+      <a class="next" href="lesson-15.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">15 · Course Project — Employees Management</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

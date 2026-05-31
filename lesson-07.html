@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 07 — Tổ chức Code &amp; Dependency Injection | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 07 — Tổ chức Code &amp; Dependency Injection</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Tổ chức Minimal API Endpoint</a></li>
+      <li><a href="#s2">2. Vấn đề phụ thuộc (Dependency Problem)</a></li>
+      <li><a href="#s3">3. Nguyên tắc Đảo ngược Phụ thuộc (DIP)</a></li>
+      <li><a href="#s4">4. Nguyên tắc Đảo ngược Điều khiển (IoC)</a></li>
+      <li><a href="#s5">5. Quản lý vòng đời dịch vụ (Lifetime Management)</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 07</span>
+      <h1>Tổ chức Code &amp; Dependency Injection</h1>
+      <p class="lead">Tìm hiểu cách tổ chức code cho Minimal API bằng extension method, giải quyết vấn đề tightly-coupled bằng Dependency Injection, và nắm vững ba vòng đời dịch vụ: Singleton, Scoped, Transient trong ASP.NET Core .NET 9.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Tổ chức Minimal API Endpoint</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Organize Minimal Api Endpoints</em></p>
+
+      <p>Khi số lượng endpoint tăng lên, nhồi nhét tất cả vào <code>Program.cs</code> sẽ làm file này trở nên cồng kềnh và khó bảo trì. ASP.NET Core cho phép tách các endpoint ra từng class riêng thông qua <strong>extension method</strong> trên <code>WebApplication</code>.</p>
+
+      <h3>Vấn đề với Program.cs quá lớn</h3>
+      <p>Nguyên tắc chung: <code>Program.cs</code> chỉ nên chứa cấu hình ứng dụng (đăng ký service, cấu hình middleware), không nên chứa bất kỳ logic nghiệp vụ hay định nghĩa endpoint nào. Khi có nhiều nhóm endpoint (employees, departments, products…), mỗi nhóm nên nằm trong một file riêng.</p>
+
+      <h3>Giải pháp: Extension Method trên WebApplication</h3>
+      <p>Tạo một thư mục <code>Endpoints/</code>, bên trong tạo các static class, mỗi class chứa một static method mở rộng <code>WebApplication</code>. Vì <code>app</code> trong <code>Program.cs</code> có kiểu <code>WebApplication</code>, ta có thể gọi trực tiếp phương thức mở rộng này lên <code>app</code>.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Extension method phải nằm trong <code>static class</code> và tham số đầu tiên dùng từ khóa <code>this</code> để chỉ định kiểu được mở rộng.</p>
+      </div>
+
+      <h3>Cấu trúc thư mục đề xuất</h3>
+      <pre><code>MyApp/
+├── Program.cs
+├── Endpoints/
+│   ├── EmployeeEndpoints.cs
+│   └── DepartmentEndpoints.cs
+└── Repositories/
+    └── EmployeeRepository.cs</code></pre>
+
+      <h3>Bước 1 — Tạo class chứa endpoint</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Http;
+
+namespace MyApp.Endpoints;
+
+public static class EmployeeEndpoints
+{
+    public static void MapEmployeeEndpoints(this WebApplication app)
+    {
+        app.MapGet("/employees", () =&gt;
+        {
+            return EmployeeRepository.GetAll();
+        });
+
+        app.MapGet("/employees/{id}", (int id) =&gt;
+        {
+            var employee = EmployeeRepository.GetById(id);
+            return employee is null ? Results.NotFound() : Results.Ok(employee);
+        });
+
+        app.MapPost("/employees", (Employee employee) =&gt;
+        {
+            EmployeeRepository.Add(employee);
+            return Results.Created($"/employees/{employee.Id}", employee);
+        });
+
+        app.MapPut("/employees/{id}", (int id, Employee updated) =&gt;
+        {
+            var result = EmployeeRepository.Update(id, updated);
+            return result ? Results.NoContent() : Results.NotFound();
+        });
+
+        app.MapDelete("/employees/{id}", (int id) =&gt;
+        {
+            var result = EmployeeRepository.Delete(id);
+            return result ? Results.Ok() : Results.NotFound();
+        });
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 2 — Gọi extension method từ Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Thay vì định nghĩa hàng chục endpoint ở đây,
+// chỉ cần gọi một dòng:
+app.MapEmployeeEndpoints();
+
+// Sau này thêm nhóm mới cũng rất gọn:
+// app.MapDepartmentEndpoints();
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Với cách này, mỗi nhóm endpoint nằm trong một file riêng biệt. Khi nhóm phát triển cần thêm endpoint mới cho <code>Department</code>, chỉ cần tạo file <code>DepartmentEndpoints.cs</code> và thêm một dòng gọi trong <code>Program.cs</code> mà không làm ảnh hưởng đến phần còn lại.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Vấn đề phụ thuộc (Dependency Problem)</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Dependency Problem</em></p>
+
+      <p>Sau khi tách endpoint ra file riêng, code trở nên gọn hơn về cấu trúc, nhưng vẫn còn một vấn đề kiến trúc nghiêm trọng: <strong>tightly coupling</strong> (phụ thuộc chặt chẽ) giữa tầng API và tầng dữ liệu.</p>
+
+      <h3>Biểu hiện của tightly coupling</h3>
+      <p>Trong ví dụ trước, <code>EmployeeEndpoints</code> gọi trực tiếp <code>EmployeeRepository</code> — một class cụ thể. Điều này tạo ra phụ thuộc trực tiếp:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs — vấn đề</span><span class="lang">csharp</span></div>
+        <pre><code>// Tầng API biết tường tận về tầng dữ liệu cụ thể
+// Đây là tightly coupling!
+app.MapGet("/employees", () =&gt;
+{
+    return EmployeeRepository.GetAll(); // gọi trực tiếp class
+});</code></pre>
+      </div>
+
+      <h3>Hệ quả của tightly coupling</h3>
+      <table class="tbl">
+        <tr><th>Vấn đề</th><th>Mô tả</th></tr>
+        <tr><td><strong>Khó bảo trì</strong></td><td>Nếu đổi tên hoặc refactor <code>EmployeeRepository</code>, phải sửa tất cả nơi đang dùng nó.</td></tr>
+        <tr><td><strong>Không thể làm song song</strong></td><td>Nhóm phát triển API phải chờ nhóm phát triển data layer xong mới làm được.</td></tr>
+        <tr><td><strong>Khó thay thế</strong></td><td>Muốn đổi từ in-memory sang database thật phải sửa code ở nhiều chỗ.</td></tr>
+        <tr><td><strong>Khó test</strong></td><td>Không thể mock hoặc fake repository khi viết unit test.</td></tr>
+      </table>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Nguyên tắc:</strong> Tầng cao hơn (API definition) không nên biết về tầng thấp hơn (Repository cụ thể). Chúng ta cần một cơ chế để <em>tách rời</em> (decouple) hai tầng này. Đó là lý do ra đời của <strong>Dependency Injection</strong>.</p>
+      </div>
+
+      <h3>Giải pháp — Dependency Injection</h3>
+      <p>Dependency Injection (DI) được xây dựng dựa trên hai nguyên tắc:</p>
+      <ol class="steps">
+        <li><strong>Dependency Inversion Principle (DIP)</strong> — Nguyên tắc đảo ngược phụ thuộc: cả hai tầng đều phụ thuộc vào một abstraction (interface), không phụ thuộc vào nhau trực tiếp.</li>
+        <li><strong>Inversion of Control (IoC)</strong> — Nguyên tắc đảo ngược điều khiển: việc tạo và quản lý vòng đời của đối tượng được trao cho framework, không phải code nghiệp vụ tự xử lý.</li>
+      </ol>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Nguyên tắc Đảo ngược Phụ thuộc (DIP)</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Dependency Inversion Principle</em></p>
+
+      <p><strong>Dependency Inversion Principle (DIP)</strong> là chữ D trong SOLID. Nguyên tắc này phát biểu: <em>các module cấp cao không nên phụ thuộc vào module cấp thấp — cả hai nên phụ thuộc vào abstraction</em>.</p>
+
+      <h3>Sơ đồ trước khi áp dụng DIP</h3>
+      <p>Hiện tại cả hai component đều biết nhau trực tiếp:</p>
+      <pre><code>EmployeeEndpoints  ──────depends on──────&gt;  EmployeeRepository
+   (higher component)                         (lower component)</code></pre>
+
+      <h3>Sơ đồ sau khi áp dụng DIP</h3>
+      <p>Giới thiệu một interface làm trung gian — cả hai đều phụ thuộc vào interface, không phụ thuộc vào nhau:</p>
+      <pre><code>EmployeeEndpoints  ──depends on──&gt;  IEmployeeRepository  &lt;──implements──  EmployeeRepository
+   (higher)                          (abstraction)                            (lower)</code></pre>
+
+      <h3>Bước 1 — Định nghĩa Interface (Abstraction)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Repositories/IEmployeeRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace MyApp.Repositories;
+
+public interface IEmployeeRepository
+{
+    IEnumerable&lt;Employee&gt; GetAll();
+    Employee? GetById(int id);
+    void Add(Employee employee);
+    bool Update(int id, Employee updated);
+    bool Delete(int id);
+}</code></pre>
+      </div>
+
+      <h3>Bước 2 — Class cụ thể implement Interface</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Repositories/EmployeeRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace MyApp.Repositories;
+
+public class EmployeeRepository : IEmployeeRepository
+{
+    private readonly List&lt;Employee&gt; _employees = new()
+    {
+        new Employee { Id = 1, Name = "Alice", Salary = 80_000 },
+        new Employee { Id = 2, Name = "Bob",   Salary = 90_000 },
+        new Employee { Id = 3, Name = "Carol",  Salary = 75_000 },
+    };
+
+    public IEnumerable&lt;Employee&gt; GetAll() =&gt; _employees;
+
+    public Employee? GetById(int id) =&gt;
+        _employees.FirstOrDefault(e =&gt; e.Id == id);
+
+    public void Add(Employee employee)
+    {
+        employee.Id = _employees.Max(e =&gt; e.Id) + 1;
+        _employees.Add(employee);
+    }
+
+    public bool Update(int id, Employee updated)
+    {
+        var existing = GetById(id);
+        if (existing is null) return false;
+        existing.Name   = updated.Name;
+        existing.Salary = updated.Salary;
+        return true;
+    }
+
+    public bool Delete(int id)
+    {
+        var existing = GetById(id);
+        if (existing is null) return false;
+        _employees.Remove(existing);
+        return true;
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 3 — Endpoint dùng Interface thay vì Class cụ thể</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace MyApp.Endpoints;
+
+public static class EmployeeEndpoints
+{
+    public static void MapEmployeeEndpoints(this WebApplication app)
+    {
+        // IEmployeeRepository được inject vào, không tự new
+        app.MapGet("/employees", (IEmployeeRepository repo) =&gt;
+            repo.GetAll());
+
+        app.MapGet("/employees/{id}", (int id, IEmployeeRepository repo) =&gt;
+        {
+            var emp = repo.GetById(id);
+            return emp is null ? Results.NotFound() : Results.Ok(emp);
+        });
+
+        app.MapPost("/employees", (Employee emp, IEmployeeRepository repo) =&gt;
+        {
+            repo.Add(emp);
+            return Results.Created($"/employees/{emp.Id}", emp);
+        });
+
+        app.MapPut("/employees/{id}", (int id, Employee emp, IEmployeeRepository repo) =&gt;
+            repo.Update(id, emp) ? Results.NoContent() : Results.NotFound());
+
+        app.MapDelete("/employees/{id}", (int id, IEmployeeRepository repo) =&gt;
+            repo.Delete(id) ? Results.Ok() : Results.NotFound());
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Điểm mấu chốt:</strong> <code>EmployeeEndpoints</code> giờ chỉ biết về <code>IEmployeeRepository</code> (interface), không biết gì về <code>EmployeeRepository</code> (class cụ thể). Hai tầng đã được <em>decouple</em>. Nhưng ai sẽ tạo instance của <code>EmployeeRepository</code> và truyền vào? Đó là nhiệm vụ của <strong>IoC Container</strong>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Nguyên tắc Đảo ngược Điều khiển (IoC)</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Inversion of Control principle</em></p>
+
+      <p><strong>Inversion of Control (IoC)</strong> giải quyết câu hỏi còn lại sau khi áp dụng DIP: <em>ai sẽ tạo ra instance của <code>EmployeeRepository</code> và truyền vào đúng chỗ?</em></p>
+
+      <h3>Vấn đề nếu tự tạo instance</h3>
+      <p>Nếu không có IoC, lập trình viên phải tự viết:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Tình huống không dùng IoC — sai</span><span class="lang">csharp</span></div>
+        <pre><code>// Higher component vẫn biết về EmployeeRepository (lower)
+// vì phải tự new nó lên — vẫn tightly coupled!
+IEmployeeRepository repo = new EmployeeRepository();
+</code></pre>
+      </div>
+
+      <p>Cách làm trên vi phạm DIP vì tầng cao vẫn phụ thuộc vào tầng thấp (thông qua lệnh <code>new</code>). IoC giải quyết điều này bằng cách <strong>chuyển giao quyền tạo đối tượng</strong> cho framework.</p>
+
+      <h3>IoC Container trong ASP.NET Core</h3>
+      <p>ASP.NET Core tích hợp sẵn một <strong>DI Container</strong> (còn gọi là IoC Container). Lập trình viên đăng ký ánh xạ <em>interface → implementation</em> vào container. Sau đó, mỗi khi có component nào cần interface đó, framework tự động tạo instance phù hợp và <em>inject</em> (tiêm) vào.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using MyApp.Endpoints;
+using MyApp.Repositories;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký vào DI Container:
+// "Khi ai đó cần IEmployeeRepository, hãy tạo EmployeeRepository"
+builder.Services.AddSingleton&lt;IEmployeeRepository, EmployeeRepository&gt;();
+
+var app = builder.Build();
+
+app.MapEmployeeEndpoints();
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Cách ASP.NET Core inject vào Minimal API handler</h3>
+      <p>Đối với Minimal API, framework sử dụng <strong>parameter injection</strong>: bất kỳ tham số nào của handler delegate có kiểu được đăng ký trong DI Container sẽ được tự động inject. Framework nhận biết qua attribute <code>[FromServices]</code> (có thể viết tường minh hoặc bỏ qua vì framework tự suy luận).</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Inject tường minh vs ngầm định</span><span class="lang">csharp</span></div>
+        <pre><code>// Ngầm định — framework tự nhận biết IEmployeeRepository là service
+app.MapGet("/employees", (IEmployeeRepository repo) =&gt;
+    repo.GetAll());
+
+// Tường minh — dùng [FromServices] khi cần rõ ràng
+app.MapGet("/employees", ([FromServices] IEmployeeRepository repo) =&gt;
+    repo.GetAll());</code></pre>
+      </div>
+
+      <h3>Luồng hoạt động tổng thể</h3>
+      <ol class="steps">
+        <li>Ứng dụng khởi động — DI Container được khởi tạo với các ánh xạ đã đăng ký.</li>
+        <li>Client gửi request <code>GET /employees</code>.</li>
+        <li>Framework tìm handler phù hợp (<code>MapGet("/employees", ...)</code>).</li>
+        <li>Thấy handler cần <code>IEmployeeRepository</code> — container tạo (hoặc lấy) instance <code>EmployeeRepository</code>.</li>
+        <li>Instance được inject vào tham số <code>repo</code> của handler.</li>
+        <li>Handler thực thi, trả về response.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Khi dùng MVC Controller, cách inject khác một chút — sẽ học ở chương MVC. Với Minimal API, parameter injection là cơ chế chính và rất tiện lợi.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Quản lý vòng đời dịch vụ (Lifetime Management)</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Lifetime Management</em></p>
+
+      <p>Khi đăng ký dịch vụ vào DI Container, bạn phải quyết định <strong>vòng đời (lifetime)</strong> của nó — tức là DI Container sẽ tạo mới hay tái sử dụng instance khi có yêu cầu. ASP.NET Core cung cấp ba vòng đời:</p>
+
+      <table class="tbl">
+        <tr><th>Method</th><th>Vòng đời</th><th>Khi nào dùng</th></tr>
+        <tr>
+          <td><code>AddSingleton&lt;&gt;</code></td>
+          <td>Một instance duy nhất trong suốt vòng đời ứng dụng</td>
+          <td>Dữ liệu in-memory, cache, configuration, shared state</td>
+        </tr>
+        <tr>
+          <td><code>AddScoped&lt;&gt;</code></td>
+          <td>Một instance cho mỗi HTTP request</td>
+          <td>DbContext (Entity Framework), Unit of Work, service cần dùng chung trong một request</td>
+        </tr>
+        <tr>
+          <td><code>AddTransient&lt;&gt;</code></td>
+          <td>Tạo mới mỗi lần được inject</td>
+          <td>Service nhẹ, không trạng thái, tính toán đơn thuần</td>
+        </tr>
+      </table>
+
+      <h3>Singleton — một instance suốt đời ứng dụng</h3>
+      <p>Container tạo đúng một instance khi lần đầu tiên được yêu cầu và giữ nó trong bộ nhớ cho đến khi ứng dụng dừng. Tất cả request sau đều nhận cùng một instance.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — Singleton</span><span class="lang">csharp</span></div>
+        <pre><code>// EmployeeRepository lưu dữ liệu trong List&lt;Employee&gt; (in-memory)
+// Phải dùng Singleton để tất cả request dùng chung một danh sách
+builder.Services.AddSingleton&lt;IEmployeeRepository, EmployeeRepository&gt;();
+</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Nếu dùng <code>AddTransient</code> cho <code>EmployeeRepository</code>, mỗi handler sẽ nhận một danh sách <code>employees</code> khác nhau. Thêm nhân viên qua <code>POST /employees</code> xong gọi <code>GET /employees</code> sẽ không thấy bản ghi vừa thêm — vì đây là hai instance khác nhau!</p>
+      </div>
+
+      <h3>Transient — tạo mới mỗi lần inject</h3>
+      <p>Mỗi lần DI Container cần inject service này, nó tạo một instance hoàn toàn mới. Instance được dùng xong thì dispose ngay.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — Transient</span><span class="lang">csharp</span></div>
+        <pre><code>// Phù hợp với service không giữ trạng thái
+builder.Services.AddTransient&lt;IEmailSender, SmtpEmailSender&gt;();
+</code></pre>
+      </div>
+
+      <h3>Scoped — một instance cho mỗi HTTP request</h3>
+      <p>Trong phạm vi một HTTP request, tất cả các component yêu cầu service này sẽ nhận cùng một instance. Khi request kết thúc (response được gửi đi), instance được dispose.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — Scoped</span><span class="lang">csharp</span></div>
+        <pre><code>// Entity Framework DbContext luôn đăng ký Scoped
+// AddDbContext tự dùng Scoped cho bạn
+builder.Services.AddDbContext&lt;AppDbContext&gt;(options =&gt;
+    options.UseSqlServer(connectionString));
+
+// Hoặc service tùy chỉnh cần dùng chung trong một request:
+builder.Services.AddScoped&lt;IOrderService, OrderService&gt;();
+</code></pre>
+      </div>
+
+      <h3>So sánh bằng ví dụ trực quan</h3>
+      <p>Giả sử ba middleware (A, B, C) cùng xử lý một request và đều cần <code>IMyService</code>:</p>
+      <table class="tbl">
+        <tr><th>Lifetime</th><th>A nhận</th><th>B nhận</th><th>C nhận</th><th>Request tiếp theo</th></tr>
+        <tr><td><strong>Singleton</strong></td><td>Instance #1</td><td>Instance #1</td><td>Instance #1</td><td>Instance #1 (cùng)</td></tr>
+        <tr><td><strong>Scoped</strong></td><td>Instance #1</td><td>Instance #1</td><td>Instance #1</td><td>Instance #2 (mới)</td></tr>
+        <tr><td><strong>Transient</strong></td><td>Instance #1</td><td>Instance #2</td><td>Instance #3</td><td>Instance #4, #5, #6…</td></tr>
+      </table>
+
+      <h3>Ví dụ đầy đủ — Program.cs với DI hoàn chỉnh</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using MyApp.Endpoints;
+using MyApp.Repositories;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký dịch vụ với lifetime phù hợp
+builder.Services.AddSingleton&lt;IEmployeeRepository, EmployeeRepository&gt;();
+// builder.Services.AddScoped&lt;IOrderService, OrderService&gt;();
+// builder.Services.AddTransient&lt;IEmailSender, SmtpEmailSender&gt;();
+
+var app = builder.Build();
+
+// Tổ chức endpoint ra file riêng qua extension method
+app.MapEmployeeEndpoints();
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Quy tắc chọn lifetime:</strong></p>
+        <ul>
+          <li>Dùng <strong>Singleton</strong> khi dữ liệu/trạng thái phải chia sẻ toàn bộ ứng dụng (in-memory store, cache, cấu hình).</li>
+          <li>Dùng <strong>Scoped</strong> khi dữ liệu chỉ nên chia sẻ trong phạm vi một request (DbContext, Unit of Work).</li>
+          <li>Dùng <strong>Transient</strong> khi service không có trạng thái và mỗi lần dùng cần instance độc lập (helpers, validators, email senders).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-06.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">06 · Minimal API — Producing Results</div>
+      </a>
+      <a class="next" href="lesson-08.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">08 · MVC Controllers — Routing</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

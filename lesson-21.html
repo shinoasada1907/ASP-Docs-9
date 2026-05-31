@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 21 — Tạo Web API với Controllers | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 21 — Tạo Web API với Controllers</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. MVC pattern trong Web API</a></li>
+      <li><a href="#s2">2. Tạo project với VS template</a></li>
+      <li><a href="#s3">3. Attribute Routing — Route Attribute</a></li>
+      <li><a href="#s4">4. Attribute Routing — Token Replacement</a></li>
+      <li><a href="#s5">5. Attribute Routing — HttpMethod Attribute</a></li>
+      <li><a href="#s6">6. ApiController Attribute</a></li>
+      <li><a href="#s7">7. Content Negotiation</a></li>
+      <li><a href="#s8">8. Minimal API vs Web API với Controllers</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 21</span>
+      <h1>Tạo Web API với Controllers</h1>
+      <p class="lead">Xây dựng Web API theo mô hình MVC với <code>ControllerBase</code> — attribute routing, token replacement, <code>[ApiController]</code>, content negotiation, và so sánh với Minimal API.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> MVC Pattern trong Web API</h2>
+      <p class="subvideo-meta">Bài 1 · <em>MVC pattern in creating Web API with controllers</em></p>
+
+      <p>Khi xây dựng API bằng controller trong ASP.NET Core, <strong>mô hình MVC vẫn được áp dụng hoàn toàn</strong> — chỉ khác ở một điểm: phần <em>View</em> được thay thế bằng <strong>Output Formatter</strong>.</p>
+
+      <h3>Sơ đồ luồng xử lý</h3>
+      <p>Một request đến Web API đi qua pipeline như sau:</p>
+      <ol class="steps">
+        <li>Client gửi HTTP request → đi qua <strong>Middleware Pipeline</strong>.</li>
+        <li><strong>Endpoint Middleware</strong> chọn controller action phù hợp.</li>
+        <li>Controller sử dụng service để lấy dữ liệu (từ database hoặc nguồn khác).</li>
+        <li>Action method trả về một <strong>model object</strong> (thay vì View).</li>
+        <li><strong>Output Formatter</strong> định dạng model thành JSON/XML và ghi vào HTTP response.</li>
+      </ol>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Trong MVC truyền thống, bước 5 là <em>Result Execution</em> (render Razor View). Trong Web API, bước này được thay bằng <em>Output Formatter</em> — kết quả là một luồng bytes (JSON mặc định) thay vì HTML. Về cơ chế filter pipeline, mọi thứ hoàn toàn giống nhau.</p>
+      </div>
+
+      <h3>Filter pipeline vẫn hoạt động đầy đủ</h3>
+      <p>Web API với controller kế thừa toàn bộ filter pipeline của MVC: <strong>Authorization → Resource → Action → Exception → Result</strong>. Điều này cho phép tái sử dụng các filter đã viết cho MVC mà không cần thay đổi.</p>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Điểm mấu chốt:</strong> MVC pattern vẫn áp dụng ở cả cấp độ cao (Controller → Service → Model → Output Formatter) lẫn cấp độ thấp (filter pipeline). Hiểu điều này giúp bạn tận dụng kiến thức MVC để xây dựng API hiệu quả.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Tạo Project Web API bằng Visual Studio Template</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Create Web API with controllers using VS template</em></p>
+
+      <p>Visual Studio cung cấp template <strong>ASP.NET Core Web API</strong> để nhanh chóng khởi tạo project API với đầy đủ cấu trúc. Hiểu rõ những gì template tạo ra giúp bạn tự xây dựng từ đầu khi cần.</p>
+
+      <h3>Cấu trúc project do template tạo ra</h3>
+      <ul>
+        <li><code>Program.cs</code> — đăng ký services và cấu hình middleware pipeline.</li>
+        <li><code>Controllers/WeatherForecastController.cs</code> — controller mẫu.</li>
+        <li><code>WeatherForecast.cs</code> — model class (nên chuyển vào thư mục <code>Models/</code>).</li>
+      </ul>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Template đặt <code>WeatherForecast.cs</code> ở thư mục gốc. Trong dự án thực tế, luôn tạo thư mục <code>Models/</code> để tổ chức các model class — đặc biệt khi project có nhiều model.</p>
+      </div>
+
+      <h3>Program.cs của Web API project</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký controller services (không có View support)
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.UseHttpsRedirection();
+
+app.UseAuthorization();
+
+// Map tất cả controller action thành endpoint
+// Không dùng MapControllerRoute (conventional routing)
+// mà dùng MapControllers (attribute routing)
+app.MapControllers();
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>ControllerBase vs Controller</h3>
+      <p>Web API controller kế thừa <code>ControllerBase</code>, không phải <code>Controller</code>:</p>
+      <table class="tbl">
+        <tr><th>Base class</th><th>Dùng cho</th><th>Có View support?</th></tr>
+        <tr>
+          <td><code>ControllerBase</code></td>
+          <td>Web API (chỉ trả JSON/XML)</td>
+          <td>Không — nhẹ hơn</td>
+        </tr>
+        <tr>
+          <td><code>Controller</code></td>
+          <td>MVC (trả về View/Razor)</td>
+          <td>Có — kế thừa <code>ControllerBase</code> + thêm <code>View()</code>, <code>PartialView()</code>, <code>ViewData</code>…</td>
+        </tr>
+      </table>
+
+      <h3>Controller mẫu</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("[controller]")]
+public class WeatherForecastController : ControllerBase
+{
+    private static readonly string[] Summaries = new[]
+    {
+        "Freezing", "Bracing", "Chilly", "Cool", "Mild",
+        "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+    };
+
+    [HttpGet]
+    public IEnumerable&lt;WeatherForecast&gt; Get()
+    {
+        return Enumerable.Range(1, 5).Select(index =&gt; new WeatherForecast
+        {
+            Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary = Summaries[Random.Shared.Next(Summaries.Length)]
+        });
+    }
+}</code></pre>
+      </div>
+
+      <h3>MapControllers vs MapControllerRoute</h3>
+      <table class="tbl">
+        <tr><th>Phương thức</th><th>Routing style</th><th>Dùng khi</th></tr>
+        <tr>
+          <td><code>app.MapControllers()</code></td>
+          <td>Attribute routing</td>
+          <td>Web API — route được chỉ định trực tiếp trên controller/action</td>
+        </tr>
+        <tr>
+          <td><code>app.MapControllerRoute()</code></td>
+          <td>Conventional routing</td>
+          <td>MVC — pattern <code>{controller}/{action}/{id?}</code></td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Attribute Routing — Route Attribute</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Attribute Routing — Route Attribute</em></p>
+
+      <p>Web API hầu như chỉ dùng <strong>attribute routing</strong>. Conventional routing (pattern <code>{controller}/{action}</code>) ít phù hợp vì API cần URL có ngữ nghĩa rõ ràng và kiểm soát chính xác hơn.</p>
+
+      <h3>Cách dùng [Route] trên controller và action</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("departments")]           // route gốc: /departments
+public class DepartmentsController : ControllerBase
+{
+    // GET /departments
+    [HttpGet]
+    public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetAll() { ... }
+
+    // GET /departments/active  — route thêm vào phía sau route gốc
+    [HttpGet]
+    [Route("active")]
+    public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetActive() { ... }
+
+    // GET /overridden  — dấu "/" đầu tiên OVERRIDE hoàn toàn route gốc
+    [HttpGet]
+    [Route("/overridden")]
+    public ActionResult&lt;string&gt; AbsoluteRoute() =&gt; Ok("absolute");
+}</code></pre>
+      </div>
+
+      <h3>Quy tắc kết hợp route</h3>
+      <table class="tbl">
+        <tr><th>Route trên controller</th><th>Route trên action</th><th>URL kết quả</th></tr>
+        <tr><td><code>[Route("departments")]</code></td><td><em>(không có)</em></td><td><code>/departments</code></td></tr>
+        <tr><td><code>[Route("departments")]</code></td><td><code>[Route("active")]</code></td><td><code>/departments/active</code></td></tr>
+        <tr><td><code>[Route("departments")]</code></td><td><code>[Route("/overridden")]</code></td><td><code>/overridden</code></td></tr>
+      </table>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Khi route trên action <strong>bắt đầu bằng <code>/</code></strong>, nó sẽ ghi đè hoàn toàn route trên controller — không có sự kết hợp nào xảy ra.</p>
+      </div>
+
+      <h3>Một action có thể có nhiều [Route]</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Cùng một action nhưng có thể truy cập qua hai URL khác nhau
+[HttpGet]
+[Route("all")]
+[Route("/api/departments")]
+public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetAll() { ... }</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Tất cả tính năng của route template đã học (route parameters, constraints, optional parameters) đều áp dụng hoàn toàn trong attribute routing: <code>[Route("{id:int}")]</code>, <code>[Route("{name?}")]</code>…</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Attribute Routing — Token Replacement</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Attribute Routing — Token Replacement</em></p>
+
+      <p><strong>Token replacement</strong> là cơ chế cho phép dùng các token đặc biệt trong route template để tự động lấy tên controller hoặc action, tránh hard-code chuỗi dễ sai khi đổi tên class.</p>
+
+      <h3>Hai token chính</h3>
+      <table class="tbl">
+        <tr><th>Token</th><th>Được thay bằng</th><th>Ví dụ</th></tr>
+        <tr>
+          <td><code>[controller]</code></td>
+          <td>Tên controller <strong>bỏ suffix "Controller"</strong></td>
+          <td><code>DepartmentsController</code> → <code>departments</code></td>
+        </tr>
+        <tr>
+          <td><code>[action]</code></td>
+          <td>Tên action method</td>
+          <td>Method <code>GetAll</code> → <code>getall</code> (case-insensitive)</td>
+        </tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Token replacement <strong>không phân biệt hoa thường</strong> — <code>[Controller]</code>, <code>[controller]</code>, <code>[CONTROLLER]</code> đều như nhau.</p>
+      </div>
+
+      <h3>Cách dùng token</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("api/[controller]")]   // → "api/departments"
+public class DepartmentsController : ControllerBase
+{
+    // URL: GET /api/departments
+    [HttpGet]
+    public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetAll() { ... }
+
+    // URL: GET /api/departments/42
+    [HttpGet("{id:int}")]
+    public ActionResult&lt;Department&gt; GetById(int id) { ... }
+
+    // Token [action] → method name "Search"
+    // URL: GET /api/departments/search?name=HR
+    [HttpGet("[action]")]
+    public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; Search(string name) { ... }
+}</code></pre>
+      </div>
+
+      <h3>Kết hợp token với chuỗi cố định</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ kết hợp</span><span class="lang">csharp</span></div>
+        <pre><code>// Token [controller] + chuỗi cố định "api/" + parameter {city}
+[Route("api/[controller]/{city}")]
+public class WeatherForecastController : ControllerBase
+{
+    // URL: GET /api/weatherforecast/hanoi
+    [HttpGet]
+    public ActionResult&lt;WeatherForecast&gt; Get(string city) { ... }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Dùng <code>[Route("api/[controller]")]</code> làm route chuẩn cho Web API — prefix <code>api/</code> giúp phân biệt endpoint API với các trang web thông thường trong cùng project.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Attribute Routing — HttpMethod Attribute</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Attribute Routing — HttpMethod attribute</em></p>
+
+      <p>Để một route hoạt động, cần xác định <strong>hai yếu tố</strong>: route template (URL) và <strong>HTTP method</strong>. Các attribute <code>[HttpGet]</code>, <code>[HttpPost]</code>, <code>[HttpPut]</code>, <code>[HttpDelete]</code>, <code>[HttpPatch]</code> vừa khai báo HTTP method vừa có thể mang route template.</p>
+
+      <h3>Lý do cần HttpMethod attribute</h3>
+      <p>Xét hai endpoint cùng URL <code>/departments</code> nhưng khác nhau về HTTP method:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("api/[controller]")]
+public class DepartmentsController : ControllerBase
+{
+    // GET /api/departments  — lấy danh sách
+    [HttpGet]
+    public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetAll() { ... }
+
+    // POST /api/departments  — tạo mới
+    // Cùng route template nhưng khác HTTP method → không conflict
+    [HttpPost]
+    public ActionResult&lt;Department&gt; Create(Department department) { ... }
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Nếu hai action có cùng route template và cùng HTTP method mà không có gì phân biệt thêm, sẽ xảy ra <strong>route conflict</strong> — framework báo lỗi khi khởi động hoặc khi gọi endpoint.</p>
+      </div>
+
+      <h3>Dùng HttpMethod attribute như Route attribute</h3>
+      <p>HttpMethod attribute có thể nhận <strong>route template trực tiếp</strong>, không cần dùng thêm <code>[Route]</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("api/[controller]")]
+public class DepartmentsController : ControllerBase
+{
+    // GET /api/departments
+    [HttpGet]
+    public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetAll() { ... }
+
+    // GET /api/departments/42
+    [HttpGet("{id:int}")]
+    public ActionResult&lt;Department&gt; GetById(int id) { ... }
+
+    // POST /api/departments
+    [HttpPost]
+    public ActionResult&lt;Department&gt; Create(Department department) { ... }
+
+    // PUT /api/departments/42
+    [HttpPut("{id:int}")]
+    public ActionResult&lt;Department&gt; Update(int id, Department department) { ... }
+
+    // DELETE /api/departments/42
+    [HttpDelete("{id:int}")]
+    public IActionResult Delete(int id) { ... }
+}</code></pre>
+      </div>
+
+      <h3>Kết hợp token trong HttpMethod attribute</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ token trong HttpGet</span><span class="lang">csharp</span></div>
+        <pre><code>// Token [controller] dùng được bên trong HttpMethod attribute
+// URL: GET /api/departments/active
+[HttpGet("api/[controller]/active")]
+public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetActive() { ... }</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Quy ước phổ biến: đặt route gốc trên controller bằng <code>[Route("api/[controller]")]</code>, rồi chỉ thêm phần phân biệt vào <code>[HttpGet(...)]</code>, <code>[HttpPost(...)]</code> trên action. Giữ code gọn và dễ đọc.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> ApiController Attribute</h2>
+      <p class="subvideo-meta">Bài 6 · <em>ApiController Attribute</em></p>
+
+      <p><code>[ApiController]</code> là một attribute đặc biệt áp dụng một tập hợp <strong>convention</strong> (quy ước mặc định) phù hợp với Web API, giúp giảm code boilerplate và đảm bảo response nhất quán.</p>
+
+      <h3>Ba convention chính của [ApiController]</h3>
+
+      <h4>1. Tự động validate model và trả về 400 Bad Request</h4>
+      <p>Trong MVC/Razor Pages, bạn phải tự kiểm tra <code>ModelState.IsValid</code>. Với <code>[ApiController]</code>, nếu validation thất bại, framework <strong>tự động trả về 400 với ProblemDetails</strong> — action method không được gọi.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Department.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class Department
+{
+    public int Id { get; set; }
+
+    [Required]
+    [StringLength(100)]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    public string Location { get; set; } = string.Empty;
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("api/[controller]")]
+public class DepartmentsController : ControllerBase
+{
+    // Không cần kiểm tra ModelState.IsValid
+    // Nếu Name hoặc Location bị thiếu → framework tự trả 400
+    [HttpPost]
+    public ActionResult&lt;Department&gt; Create(Department department)
+    {
+        // Code chỉ chạy khi model hợp lệ
+        // ... lưu vào DB
+        return CreatedAtAction(nameof(GetById), new { id = department.Id }, department);
+    }
+}</code></pre>
+      </div>
+
+      <p>Response khi validation thất bại (ProblemDetails tự động):</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP 400 Response</span><span class="lang">json</span></div>
+        <pre><code>{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "Name": ["The Name field is required."],
+    "Location": ["The Location field is required."]
+  }
+}</code></pre>
+      </div>
+
+      <h4>2. Tự động wrap kết quả lỗi thành ProblemDetails</h4>
+      <p>Khi action trả về các kết quả lỗi như <code>NotFound()</code>, <code>BadRequest()</code>… mà không kèm message, <code>[ApiController]</code> tự động tạo <code>ProblemDetails</code> với đầy đủ thông tin.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet("{id:int}")]
+public ActionResult&lt;Department&gt; GetById(int id)
+{
+    var dept = _repository.GetById(id);
+    if (dept is null)
+        return NotFound();  // Tự động → ProblemDetails 404
+
+    return dept;
+}</code></pre>
+      </div>
+
+      <h4>3. Tự động áp dụng [FromBody] cho complex type</h4>
+      <p>Không cần khai báo <code>[FromBody]</code> tường minh — khi parameter là complex type, <code>[ApiController]</code> tự suy ra binding từ request body.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Không cần [FromBody] trước Department — [ApiController] tự áp dụng
+[HttpPost]
+public ActionResult&lt;Department&gt; Create(Department department)
+{
+    // department được bind từ request body (JSON)
+    ...
+}
+
+// Tương đương với:
+// public ActionResult&lt;Department&gt; Create([FromBody] Department department)</code></pre>
+      </div>
+
+      <h3>Cấu hình tùy chỉnh hành vi [ApiController]</h3>
+      <p>Có thể tắt từng convention nếu không muốn dùng:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =&gt;
+    {
+        // Tắt tự động validate ModelState (tự kiểm tra trong action)
+        options.SuppressModelStateInvalidFilter = false;
+
+        // Tắt tự động wrap lỗi thành ProblemDetails
+        options.SuppressMapClientErrors = false;
+
+        // Tắt tự động suy [FromBody] cho complex type
+        options.SuppressInferBindingSourcesForParameters = false;
+    });</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Luôn dùng <code>[ApiController]</code></strong> khi viết Web API với controller. Attribute này giúp API nhất quán, an toàn hơn và giảm đáng kể code lặp lại.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Content Negotiation</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Content Negotiation</em></p>
+
+      <p><strong>Content negotiation</strong> là quá trình server và client "thương lượng" về định dạng dữ liệu trong response. Client khai báo định dạng mong muốn qua HTTP header <code>Accept</code>, server dựa vào danh sách <em>Output Formatter</em> để quyết định định dạng trả về.</p>
+
+      <h3>Cơ chế hoạt động</h3>
+      <ol class="steps">
+        <li>Client gửi request kèm header <code>Accept: application/xml</code>.</li>
+        <li>Server duyệt danh sách <strong>Output Formatter</strong> theo thứ tự đã đăng ký.</li>
+        <li>Nếu tìm thấy formatter hỗ trợ media type đó → dùng formatter đó.</li>
+        <li>Nếu không tìm thấy → <strong>fallback về formatter đầu tiên</strong> (mặc định là JSON).</li>
+      </ol>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Mặc định — chỉ có JSON formatter</span><span class="lang">text</span></div>
+        <pre><code>Formatter list: [JsonOutputFormatter]
+
+Accept: application/json  → dùng JsonOutputFormatter  ✓
+Accept: application/xml   → không tìm thấy → fallback → JsonOutputFormatter
+Accept: text/plain        → không tìm thấy → fallback → JsonOutputFormatter</code></pre>
+      </div>
+
+      <h3>Thêm XML formatter</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddControllers()
+    // Thêm XML Serializer formatter vào danh sách
+    .AddXmlSerializerFormatters();
+
+// Sau khi thêm, formatter list: [JsonOutputFormatter, XmlOutputFormatter]
+// Accept: application/xml  → dùng XmlOutputFormatter  ✓
+// Accept: application/json → dùng JsonOutputFormatter ✓</code></pre>
+      </div>
+
+      <h3>Thứ tự ưu tiên khi client chấp nhận nhiều định dạng</h3>
+      <p>Client có thể khai báo nhiều media type kèm <strong>quality value (q)</strong> để chỉ mức ưu tiên:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Request Header</span><span class="lang">text</span></div>
+        <pre><code># q mặc định = 1.0 nếu không khai báo; giá trị càng cao ưu tiên càng cao
+Accept: application/xml;q=1.0, application/json;q=0.5
+# → Server ưu tiên XML (q=1.0) hơn JSON (q=0.5)
+
+Accept: application/json;q=1.0, application/xml;q=0.5
+# → Server ưu tiên JSON (q=1.0) hơn XML (q=0.5)</code></pre>
+      </div>
+
+      <h3>Tạo custom Output Formatter</h3>
+      <p>Có thể tạo formatter tùy chỉnh bằng cách kế thừa <code>TextOutputFormatter</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">CustomCsvOutputFormatter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class CustomCsvOutputFormatter : TextOutputFormatter
+{
+    public CustomCsvOutputFormatter()
+    {
+        SupportedMediaTypes.Add("text/csv");
+        SupportedEncodings.Add(Encoding.UTF8);
+    }
+
+    public override bool CanWriteType(Type? type)
+        =&gt; type?.IsGenericType == true
+           &amp;&amp; type.GetGenericTypeDefinition() == typeof(IEnumerable&lt;&gt;);
+
+    public override async Task WriteResponseBodyAsync(
+        OutputFormatterWriteContext context,
+        Encoding selectedEncoding)
+    {
+        var response = context.HttpContext.Response;
+        var data = context.Object as IEnumerable&lt;object&gt;;
+        // ... ghi CSV vào response
+        await response.WriteAsync("csv content here", selectedEncoding);
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — đăng ký custom formatter</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddControllers(options =&gt;
+{
+    // Chèn vào đầu danh sách → ưu tiên cao nhất
+    options.OutputFormatters.Insert(0, new CustomCsvOutputFormatter());
+});</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Trong thực tế, hầu hết Web API chỉ cần JSON (mặc định). Thêm XML formatter khi cần tương thích với hệ thống cũ (legacy SOAP/XML). Custom formatter phù hợp khi tích hợp với client yêu cầu định dạng đặc biệt (CSV, vCard…).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Minimal API vs Web API với Controllers</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Minimal API vs Web API with controllers</em></p>
+
+      <p>ASP.NET Core .NET 9 hỗ trợ hai cách xây dựng API. Không có lựa chọn nào "tốt hơn tuyệt đối" — quyết định phụ thuộc vào yêu cầu dự án và sở thích team.</p>
+
+      <h3>Bảng so sánh chi tiết</h3>
+      <table class="tbl">
+        <tr>
+          <th>Tiêu chí</th>
+          <th>Minimal API</th>
+          <th>Web API với Controllers</th>
+        </tr>
+        <tr>
+          <td><strong>Cú pháp</strong></td>
+          <td>Ngắn gọn, inline trong <code>Program.cs</code> hoặc tách file</td>
+          <td>Class <code>ControllerBase</code>, method riêng biệt</td>
+        </tr>
+        <tr>
+          <td><strong>Filter pipeline</strong></td>
+          <td>Chỉ có endpoint filter (<code>AddEndpointFilter</code>), không đầy đủ</td>
+          <td>Đầy đủ: Authorization → Resource → Action → Exception → Result filter</td>
+        </tr>
+        <tr>
+          <td><strong>Model validation</strong></td>
+          <td>Cần cài thêm <strong>MiniValidation</strong> hoặc package ngoài</td>
+          <td>Tích hợp sẵn qua <code>[ApiController]</code>, tự động 400</td>
+        </tr>
+        <tr>
+          <td><strong>Content Negotiation</strong></td>
+          <td>Không hỗ trợ — chỉ JSON</td>
+          <td>Hỗ trợ đầy đủ, cấu hình output formatter linh hoạt</td>
+        </tr>
+        <tr>
+          <td><strong>Hiệu năng</strong></td>
+          <td>Nhỉnh hơn (ít layer hơn)</td>
+          <td>Rất tốt, nhưng qua nhiều layer hơn một chút</td>
+        </tr>
+        <tr>
+          <td><strong>Tổ chức code</strong></td>
+          <td>Dễ bị lộn xộn khi nhiều endpoint</td>
+          <td>Cấu trúc rõ ràng, dễ bảo trì khi project lớn</td>
+        </tr>
+        <tr>
+          <td><strong>Attribute Routing</strong></td>
+          <td>Không cần — URL khai báo trực tiếp</td>
+          <td>Bắt buộc — dùng <code>[Route]</code>, <code>[HttpGet]</code>…</td>
+        </tr>
+        <tr>
+          <td><strong>Phù hợp với</strong></td>
+          <td>Microservice nhỏ, prototype, API đơn giản</td>
+          <td>API phức tạp, team lớn, nhiều logic tầng filter</td>
+        </tr>
+      </table>
+
+      <h3>Ví dụ cùng chức năng — hai cách viết</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — Minimal API</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// GET /api/departments
+app.MapGet("/api/departments", (IDepartmentService svc) =&gt;
+    Results.Ok(svc.GetAll()));
+
+// GET /api/departments/{id}
+app.MapGet("/api/departments/{id:int}", (int id, IDepartmentService svc) =&gt;
+{
+    var dept = svc.GetById(id);
+    return dept is null ? Results.NotFound() : Results.Ok(dept);
+});
+
+// POST /api/departments
+app.MapPost("/api/departments", (Department dept, IDepartmentService svc) =&gt;
+{
+    svc.Add(dept);
+    return Results.Created($"/api/departments/{dept.Id}", dept);
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs — Controller API</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("api/[controller]")]
+public class DepartmentsController : ControllerBase
+{
+    private readonly IDepartmentService _svc;
+
+    public DepartmentsController(IDepartmentService svc) =&gt; _svc = svc;
+
+    // GET /api/departments
+    [HttpGet]
+    public ActionResult&lt;IEnumerable&lt;Department&gt;&gt; GetAll()
+        =&gt; Ok(_svc.GetAll());
+
+    // GET /api/departments/{id}
+    [HttpGet("{id:int}")]
+    public ActionResult&lt;Department&gt; GetById(int id)
+    {
+        var dept = _svc.GetById(id);
+        return dept is null ? NotFound() : Ok(dept);
+    }
+
+    // POST /api/departments
+    [HttpPost]
+    public ActionResult&lt;Department&gt; Create(Department dept)
+    {
+        _svc.Add(dept);
+        return CreatedAtAction(nameof(GetById), new { id = dept.Id }, dept);
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Gợi ý lựa chọn:</strong> Dùng <strong>Minimal API</strong> cho microservice nhỏ hoặc khi team quen functional style. Dùng <strong>Controller API</strong> khi project lớn, cần filter pipeline phức tạp, content negotiation, hoặc khi team đã quen với MVC pattern. Hai cách có thể <strong>cùng tồn tại</strong> trong một project ASP.NET Core.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-20.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">20 · Consume API</div>
+      </a>
+      <a class="next" href="lesson-22.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">22 · Minimal API — Documentation &amp; Versioning</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

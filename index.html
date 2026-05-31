@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASP.NET Core .NET 9 — Tài liệu khóa học</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Tài liệu khóa học — Deep Dive</small></div>
+</header>
+
+<section class="hero">
+  <h1>ASP.NET Core .NET 9 — Deep Dive</h1>
+  <p>Bộ tài liệu tổng hợp từ 29 chương của khóa học: từ giao thức HTTP, Minimal API, MVC, Razor Pages,
+     Web API, Entity Framework Core cho tới Cấu hình, Logging, Xử lý lỗi và Bảo mật.</p>
+  <p>Mỗi bài gồm phần lý thuyết được giải thích bằng tiếng Việt kèm code demo trích từ project thực tế của khóa học.</p>
+  <div class="stats">
+    <div class="stat"><b>29</b><span>Chương</span></div>
+    <div class="stat"><b>225</b><span>Bài học</span></div>
+    <div class="stat"><b>.NET 9</b><span>Phiên bản</span></div>
+    <div class="stat"><b>VI</b><span>Tiếng Việt</span></div>
+  </div>
+</section>
+
+<main class="wrap">
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 1</span><h2>Nền tảng ASP.NET Core</h2></div>
+    <p class="module-desc">Hiểu ASP.NET Core là gì, giao thức HTTP và HttpContext, cùng pipeline middleware xử lý request.</p>
+    <div class="cards">
+      <a class="card" href="lesson-01.html"><div class="lesson-no">CHƯƠNG 01</div><h3>Introduction</h3><p>Giới thiệu khóa học, ASP.NET Core là gì, giải phẫu ứng dụng và web app đầu tiên.</p><div class="count">4 bài học</div></a>
+      <a class="card" href="lesson-02.html"><div class="lesson-no">CHƯƠNG 02</div><h3>HTTP Protocol &amp; HTTP Context</h3><p>Cú pháp request/response, các HTTP method, query string, headers, body và HttpContext.</p><div class="count">14 bài học</div></a>
+      <a class="card" href="lesson-03.html"><div class="lesson-no">CHƯƠNG 03</div><h3>Middleware Pipeline</h3><p>Request delegate, chuỗi middleware, middleware dạng class, Map, MapWhen, Run.</p><div class="count">11 bài học</div></a>
+    </div>
+  </div>
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 2</span><h2>Minimal API</h2></div>
+    <p class="module-desc">Xây dựng API gọn nhẹ với Minimal API: routing, model binding, validation, producing results và tổ chức code.</p>
+    <div class="cards">
+      <a class="card" href="lesson-04.html"><div class="lesson-no">CHƯƠNG 04</div><h3>Minimal API Routing</h3><p>Route handler, route parameters, constraints, catch-all, route groups.</p><div class="count">10 bài học</div></a>
+      <a class="card" href="lesson-05.html"><div class="lesson-no">CHƯƠNG 05</div><h3>Model Binding &amp; Validation</h3><p>Binding tới kiểu nguyên thủy, nguồn tham số, Data Annotations, FluentValidation.</p><div class="count">11 bài học</div></a>
+      <a class="card" href="lesson-06.html"><div class="lesson-no">CHƯƠNG 06</div><h3>Producing Results</h3><p>Trả kết quả từ Minimal API: IResult, các kiểu kết quả và status code.</p><div class="count">Nhiều bài</div></a>
+      <a class="card" href="lesson-07.html"><div class="lesson-no">CHƯƠNG 07</div><h3>Code Organization &amp; DI</h3><p>Tổ chức code và Dependency Injection trong Minimal API.</p><div class="count">Nhiều bài</div></a>
+    </div>
+  </div>
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 3</span><h2>MVC</h2></div>
+    <p class="module-desc">Mô hình MVC: controller, routing, model binding, Razor Views, layout, component hóa và tương tác.</p>
+    <div class="cards">
+      <a class="card" href="lesson-08.html"><div class="lesson-no">CHƯƠNG 08</div><h3>MVC Controllers — Routing</h3><p>Định tuyến trong MVC controller: conventional và attribute routing.</p><div class="count">Nhiều bài</div></a>
+      <a class="card" href="lesson-09.html"><div class="lesson-no">CHƯƠNG 09</div><h3>MVC — Model Binding &amp; Validation</h3><p>Binding và validation dữ liệu trong MVC controller.</p><div class="count">Nhiều bài</div></a>
+      <a class="card" href="lesson-10.html"><div class="lesson-no">CHƯƠNG 10</div><h3>MVC — Producing Results</h3><p>ContentResult, JsonResult, File Results, Redirect Results, CRUD UI.</p><div class="count">7 bài học</div></a>
+      <a class="card" href="lesson-11.html"><div class="lesson-no">CHƯƠNG 11</div><h3>MVC — Razor Views</h3><p>Razor syntax, truyền model, code block, điều kiện, vòng lặp, ViewData/ViewBag.</p><div class="count">15 bài học</div></a>
+      <a class="card" href="lesson-12.html"><div class="lesson-no">CHƯƠNG 12</div><h3>MVC Layout Views</h3><p>Layout, nested layout, _ViewStart, _ViewImports, sections.</p><div class="count">6 bài học</div></a>
+      <a class="card" href="lesson-13.html"><div class="lesson-no">CHƯƠNG 13</div><h3>Componentization &amp; Interactivity</h3><p>Partial View, View Component, kết hợp JavaScript để tạo tương tác.</p><div class="count">10 bài học</div></a>
+    </div>
+  </div>
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 4</span><h2>Razor Pages</h2></div>
+    <p class="module-desc">Mô hình Razor Pages và một dự án quản lý nhân viên hoàn chỉnh.</p>
+    <div class="cards">
+      <a class="card" href="lesson-14.html"><div class="lesson-no">CHƯƠNG 14</div><h3>Razor Pages</h3><p>Vì sao Razor Pages, route template, page handler, model binding, validation.</p><div class="count">14 bài học</div></a>
+      <a class="card" href="lesson-15.html"><div class="lesson-no">CHƯƠNG 15</div><h3>Course Project — Employees Management</h3><p>Dự án quản lý nhân viên với Razor Pages từ A đến Z.</p><div class="count">12 bài học</div></a>
+    </div>
+  </div>
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 5</span><h2>Tag Helpers, DI &amp; Filter Pipeline</h2></div>
+    <p class="module-desc">Tag Helpers, Dependency Injection trong view và pipeline filter cho Minimal API lẫn MVC/Razor Pages.</p>
+    <div class="cards">
+      <a class="card" href="lesson-16.html"><div class="lesson-no">CHƯƠNG 16</div><h3>Tag Helpers</h3><p>Sinh URL, form, input, option, validation phía client, versioning, load partial.</p><div class="count">8 bài học</div></a>
+      <a class="card" href="lesson-17.html"><div class="lesson-no">CHƯƠNG 17</div><h3>MVC &amp; Razor Pages DI</h3><p>Constructor injection trong controller và page model.</p><div class="count">2 bài học</div></a>
+      <a class="card" href="lesson-18.html"><div class="lesson-no">CHƯƠNG 18</div><h3>Minimal API Filter Pipeline</h3><p>Tạo và gắn filter, chuỗi filter, tách logic validation.</p><div class="count">6 bài học</div></a>
+      <a class="card" href="lesson-19.html"><div class="lesson-no">CHƯƠNG 19</div><h3>MVC &amp; Razor Pages Filter Pipeline</h3><p>Các loại filter: authorization, resource, exception, action, result, page.</p><div class="count">10 bài học</div></a>
+    </div>
+  </div>
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 6</span><h2>Web API</h2></div>
+    <p class="module-desc">Tiêu thụ và xây dựng Web API, kèm tài liệu hóa (OpenAPI/Swagger) và versioning.</p>
+    <div class="cards">
+      <a class="card" href="lesson-20.html"><div class="lesson-no">CHƯƠNG 20</div><h3>Consume API</h3><p>HttpClient, IHttpClientFactory, Typed Client, thư viện Refit.</p><div class="count">8 bài học</div></a>
+      <a class="card" href="lesson-21.html"><div class="lesson-no">CHƯƠNG 21</div><h3>Create Web API with Controllers</h3><p>Controller API, binding, validation, async, CRUD, content negotiation.</p><div class="count">11 bài học</div></a>
+      <a class="card" href="lesson-22.html"><div class="lesson-no">CHƯƠNG 22</div><h3>Minimal API — Docs &amp; Versioning</h3><p>OpenAPI, API Explorer, Swagger UI, versioning, group endpoints.</p><div class="count">5 bài học</div></a>
+      <a class="card" href="lesson-23.html"><div class="lesson-no">CHƯƠNG 23</div><h3>Web API — Docs &amp; Versioning</h3><p>Thêm OpenAPI và versioning cho Web API controller.</p><div class="count">2 bài học</div></a>
+    </div>
+  </div>
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 7</span><h2>Dữ liệu, Cấu hình, Logging &amp; Lỗi</h2></div>
+    <p class="module-desc">Truy cập CSDL với EF Core, cấu hình ứng dụng, ghi log và xử lý ngoại lệ.</p>
+    <div class="cards">
+      <a class="card" href="lesson-24.html"><div class="lesson-no">CHƯƠNG 24</div><h3>Entity Framework Core</h3><p>DbContext, migrations, seed, CRUD, sorting, filtering, pagination.</p><div class="count">14 bài học</div></a>
+      <a class="card" href="lesson-25.html"><div class="lesson-no">CHƯƠNG 25</div><h3>Configuration</h3><p>Nguồn cấu hình, appsettings.json, IOptions, reload, theo môi trường.</p><div class="count">5 bài học</div></a>
+      <a class="card" href="lesson-26.html"><div class="lesson-no">CHƯƠNG 26</div><h3>Logging</h3><p>Logging cơ bản, log level, cấu hình, structured logging với Serilog.</p><div class="count">4 bài học</div></a>
+      <a class="card" href="lesson-27.html"><div class="lesson-no">CHƯƠNG 27</div><h3>Exception Handling</h3><p>Developer Exception Page, Exception Handler Middleware, Problem Details.</p><div class="count">4 bài học</div></a>
+    </div>
+  </div>
+
+  <div class="module">
+    <div class="module-title"><span class="badge">Phần 8</span><h2>Bảo mật</h2></div>
+    <p class="module-desc">Bảo mật ứng dụng web (Cookie Authentication, Authorization) và bảo mật Web API với JWT.</p>
+    <div class="cards">
+      <a class="card" href="lesson-28.html"><div class="lesson-no">CHƯƠNG 28</div><h3>Securing Web App</h3><p>Authentication &amp; Authorization, Cookie, đăng nhập/đăng xuất, policy, role, claim.</p><div class="count">15 bài học</div></a>
+      <a class="card" href="lesson-29.html"><div class="lesson-no">CHƯƠNG 29</div><h3>Securing Web API</h3><p>JWT authentication ticket, sinh/lưu/gửi/giải mã JWT, authorization dựa trên JWT.</p><div class="count">6 bài học</div></a>
+    </div>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  Tài liệu được tổng hợp từ khóa học <strong>ASP.NET Core .NET 9</strong> · Nội dung tiếng Việt kèm code demo thực tế.
+</footer>
+
+</body>
+</html>

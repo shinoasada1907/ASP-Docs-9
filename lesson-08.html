@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 08 — MVC Controllers: Routing | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 08 — MVC Controllers: Routing</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Controllers là gì &amp; tại sao dùng</a></li>
+      <li><a href="#s2">2. Attribute Routing</a></li>
+      <li><a href="#s3">3. Conventional Routing</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 08</span>
+      <h1>MVC Controllers — Routing</h1>
+      <p class="lead">Tìm hiểu MVC Controller là gì, khi nào nên dùng, và hai chiến lược định tuyến: <strong>attribute routing</strong> (khai báo trực tiếp trên action) và <strong>conventional routing</strong> (dùng template chung cho toàn ứng dụng).</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Controllers là gì &amp; tại sao dùng</h2>
+      <p class="subvideo-meta">Bài 1 · <em>What and Why Controllers</em></p>
+
+      <p>Trước đây chúng ta đã học cách tạo endpoint bằng <strong>Minimal API</strong> — dùng các lambda expression ngắn gọn như <code>app.MapGet()</code>. Bắt đầu từ chương này, ta học thêm một cách khác: <strong>MVC Controllers</strong>.</p>
+
+      <h3>Controller là gì?</h3>
+      <p>Một <strong>controller</strong> là một class C# đóng vai trò như một <em>container</em> nhóm các endpoint có liên quan lại với nhau. Thay vì viết từng lambda rời rạc, ta tổ chức chúng thành các <strong>action method</strong> (phương thức hành động) bên trong một class có cấu trúc rõ ràng.</p>
+
+      <table class="tbl">
+        <tr><th>Khái niệm</th><th>Minimal API</th><th>MVC Controller</th></tr>
+        <tr><td>Endpoint handler</td><td>Lambda / delegate</td><td>Action method (public method trong controller)</td></tr>
+        <tr><td>Tổ chức</td><td>Rải rác trong <code>Program.cs</code></td><td>Nhóm theo class, theo chủ đề</td></tr>
+        <tr><td>Routing</td><td><code>MapGet/MapPost</code>…</td><td>Attribute routing hoặc Conventional routing</td></tr>
+      </table>
+
+      <h3>Action method</h3>
+      <p>Bất kỳ <strong>public method</strong> nào trong một controller đều mặc định được coi là một <em>action method</em> — tức là một endpoint handler. Nếu bạn muốn một method <em>không</em> phải là endpoint, hãy đánh dấu nó bằng attribute <code>[NonAction]</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+
+namespace WebApp.Controllers
+{
+    public class DepartmentsController
+    {
+        // Public method → action method (endpoint handler)
+        public string GetDepartments()
+        {
+            return "These are the departments.";
+        }
+
+        public string GetDepartmentById(int id)
+        {
+            return $"Department info for id: {id}";
+        }
+
+        // Không phải endpoint — chỉ là helper nội bộ
+        [NonAction]
+        public string BuildMessage() =&gt; "helper";
+    }
+}</code></pre>
+      </div>
+
+      <h3>Tại sao dùng MVC Controllers?</h3>
+      <ol class="steps">
+        <li><strong>Lịch sử &amp; phổ biến:</strong> MVC là kiến trúc mặc định từ những phiên bản đầu của ASP.NET. Rất nhiều dự án hiện tại vẫn dùng MVC, nên đây là kiến thức bắt buộc.</li>
+        <li><strong>Hỗ trợ giao diện người dùng (HTML):</strong> Controllers kết hợp với Razor Views giúp framework tự sinh HTML — không cần "hard-code" HTML thủ công. Minimal API cũng có thể trả về HTML nhưng phức tạp hơn nhiều.</li>
+        <li><strong>Cấu trúc rõ ràng:</strong> Controller nhóm các endpoint liên quan, giúp dự án lớn dễ duy trì hơn. Minimal API linh hoạt hơn nhưng ít có quy ước hơn.</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Khi nào nên chọn?</strong> Dùng MVC Controller khi dự án cần sinh giao diện HTML phía server (web app truyền thống), hoặc khi đội nhóm muốn cấu trúc kiểu OOP rõ ràng. Dùng Minimal API khi ưu tiên sự tối giản và hiệu năng (microservice, API-only).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Attribute Routing</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Attribute Routing</em></p>
+
+      <p><strong>Attribute routing</strong> là cách định tuyến bằng cách khai báo <em>route template</em> trực tiếp trên từng action method (hoặc trên class controller) thông qua các attribute như <code>[Route]</code>, <code>[HttpGet]</code>, <code>[HttpPost]</code>…</p>
+
+      <h3>Cách ASP.NET Core nhận diện một Controller class</h3>
+      <p>Middleware routing cần biết class nào là controller. Có hai cách:</p>
+      <ul>
+        <li><strong>Theo quy ước (convention):</strong> tên class kết thúc bằng hậu tố <code>Controller</code> (ví dụ: <code>DepartmentsController</code>).</li>
+        <li><strong>Bằng attribute:</strong> đặt attribute <code>[Controller]</code> lên class — ít phổ biến hơn.</li>
+      </ul>
+
+      <h3>Đăng ký services và middleware</h3>
+      <p>Để sử dụng controllers, cần đăng ký services và middleware trong <code>Program.cs</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký các services cần thiết cho controllers
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+// Thêm routing middleware vào pipeline
+app.UseRouting();
+
+// Định nghĩa endpoints: quét toàn bộ controllers trong assembly
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapControllers();
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>AddControllers vs AddControllersWithViews:</strong> <code>AddControllers()</code> chỉ thêm dịch vụ cho API controller (không có View). <code>AddControllersWithViews()</code> thêm thêm các dịch vụ cần thiết để render Razor View — dùng khi xây dựng web app có giao diện HTML.</p>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Top-level route registration:</strong> Thay vì dùng <code>UseRouting</code> + <code>UseEndpoints</code>, từ .NET 6 trở đi có thể viết gọn hơn: <code>app.MapControllers();</code> — cách này tương đương và được khuyến nghị trong dự án mới.</p>
+      </div>
+
+      <h3>Khai báo route trên action bằng attribute</h3>
+      <p>Sau khi đăng ký, routing middleware đã biết các class controller, nhưng vẫn chưa biết URL nào map vào action nào — ta phải cung cấp thêm <em>HTTP method</em> và <em>route template</em> bằng attribute.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+
+namespace WebApp.Controllers
+{
+    public class DepartmentsController
+    {
+        // Cách 1: tách riêng [Route] và [HttpGet]
+        [HttpGet]
+        [Route("departments")]
+        public string GetDepartments()
+        {
+            return "These are the departments.";
+        }
+
+        // Cách 2: kết hợp template vào [HttpGet] (ngắn gọn hơn)
+        [HttpGet("departments/{id}")]
+        public string GetDepartmentById(int id)
+        {
+            return $"Department info: {id}";
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Nếu chỉ đặt <code>[Route("departments")]</code> mà <strong>không</strong> có attribute HTTP method (<code>[HttpGet]</code>, <code>[HttpPost]</code>…), thì action đó có thể nhận <em>bất kỳ</em> HTTP method nào — không bị giới hạn.</p>
+      </div>
+
+      <h3>Route prefix ở cấp Controller class</h3>
+      <p>Attribute <code>[Route]</code> đặt trên <em>class</em> sẽ trở thành <strong>prefix</strong> cho tất cả route bên trong controller đó:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+
+namespace WebApp.Controllers
+{
+    [Route("/api")]          // prefix cho toàn bộ controller
+    public class DepartmentsController
+    {
+        [HttpGet("departments")]
+        public string GetDepartments()
+        {
+            return "These are the departments.";
+        }
+        // → URL: GET /api/departments
+
+        [HttpGet("departments/{id}")]
+        public string GetDepartmentById(int id)
+        {
+            return $"Department info: {id}";
+        }
+        // → URL: GET /api/departments/100
+    }
+}</code></pre>
+      </div>
+
+      <h3>Token [controller] và [action]</h3>
+      <p>Để tránh lặp tên controller/action khi viết route template, ASP.NET Core hỗ trợ các <strong>token thay thế</strong>:</p>
+      <ul>
+        <li><code>[controller]</code> — được thay bằng tên controller (bỏ hậu tố <em>Controller</em>), ví dụ <code>Departments</code>.</li>
+        <li><code>[action]</code> — được thay bằng tên method, ví dụ <code>GetDepartments</code>.</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[Route("api/[controller]")]      // → /api/departments
+public class DepartmentsController
+{
+    [HttpGet]                    // → GET /api/departments
+    public string GetDepartments() =&gt; "These are the departments.";
+
+    [HttpGet("{id:int}")]        // → GET /api/departments/42
+    public string GetDepartmentById(int id) =&gt; $"Department info: {id}";
+
+    [HttpPost]                   // → POST /api/departments
+    public string Create() =&gt; "Created a new department";
+
+    [HttpDelete("{id:int}")]     // → DELETE /api/departments/5
+    public string Delete(int id) =&gt; $"Deleted department: {id}";
+}</code></pre>
+      </div>
+
+      <h3>Route constraints (ràng buộc tham số route)</h3>
+      <p>Có thể ràng buộc kiểu dữ liệu của tham số route ngay trong template để tránh nhận request sai kiểu:</p>
+
+      <table class="tbl">
+        <tr><th>Constraint</th><th>Ý nghĩa</th><th>Ví dụ</th></tr>
+        <tr><td><code>:int</code></td><td>Phải là số nguyên</td><td><code>{id:int}</code></td></tr>
+        <tr><td><code>:guid</code></td><td>Phải là GUID hợp lệ</td><td><code>{id:guid}</code></td></tr>
+        <tr><td><code>:minlength(n)</code></td><td>Độ dài tối thiểu</td><td><code>{name:minlength(3)}</code></td></tr>
+        <tr><td><code>:range(min,max)</code></td><td>Phạm vi số</td><td><code>{age:range(1,120)}</code></td></tr>
+        <tr><td><code>:alpha</code></td><td>Chỉ chữ cái</td><td><code>{slug:alpha}</code></td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Mọi kiến thức về route template đã học ở Minimal API (route parameter, optional parameter <code>?</code>, route constraint) đều áp dụng y hệt cho attribute routing của controller.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Conventional Routing</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Conventional Routing</em></p>
+
+      <p><strong>Conventional routing</strong> (định tuyến theo quy ước) là cách định nghĩa <em>một route template chung</em> (master template) áp dụng cho toàn bộ ứng dụng. Thay vì đặt attribute riêng lên từng action, framework sẽ tự động ánh xạ URL vào controller/action dựa trên quy ước đặt tên.</p>
+
+      <h3>Kích hoạt Conventional Routing</h3>
+      <p>Thay <code>MapControllers()</code> bằng <code>MapControllerRoute()</code> và cung cấp pattern:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}"
+    );
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Giải mã master template</h3>
+      <table class="tbl">
+        <tr><th>Segment</th><th>Ý nghĩa</th><th>Ví dụ URL → Đích</th></tr>
+        <tr><td><code>{controller=Home}</code></td><td>Tên controller, default là <code>Home</code></td><td><code>/</code> → <code>HomeController</code></td></tr>
+        <tr><td><code>{action=Index}</code></td><td>Tên action method, default là <code>Index</code></td><td><code>/Departments</code> → action <code>Index</code> của <code>DepartmentsController</code></td></tr>
+        <tr><td><code>{id?}</code></td><td>Tham số tùy chọn</td><td><code>/Departments/Details/5</code> → action <code>Details</code>, <code>id=5</code></td></tr>
+      </table>
+
+      <h3>Controller tuân theo quy ước</h3>
+      <p>Khi dùng conventional routing, tên action method phải khớp với segment thứ 2 trong URL. Tên thường theo chuẩn CRUD:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+
+namespace WebApp.Controllers
+{
+    public class DepartmentsController
+    {
+        // GET /Departments  hoặc  GET /Departments/Index
+        public string Index()
+        {
+            return "These are the departments.";
+        }
+
+        // GET /Departments/Details/5
+        public string Details(int? id)
+        {
+            return $"Department info: {id}";
+        }
+
+        // POST /Departments/Create
+        [HttpPost]
+        public string Create()
+        {
+            return "Created a new department";
+        }
+
+        // POST /Departments/Edit/5
+        [HttpPost]
+        public string Edit(int? id)
+        {
+            return $"Updated department: {id}";
+        }
+
+        // POST /Departments/Delete/5
+        [HttpPost]
+        public string Delete(int? id)
+        {
+            return $"Deleted department: {id}";
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>Tại sao Create/Edit/Delete dùng <code>[HttpPost]</code>?</strong> Trong web app truyền thống (có HTML form), trình duyệt chỉ gửi được <code>GET</code> hoặc <code>POST</code>. Nút Submit của form luôn tạo ra request <code>POST</code>, vì vậy các action thay đổi dữ liệu phải chấp nhận <code>POST</code>. Với API thuần túy (không có HTML form), bạn nên dùng <code>[HttpPut]</code>/<code>[HttpDelete]</code> cho đúng ngữ nghĩa REST.</p>
+      </div>
+
+      <h3>HomeController — xử lý route mặc định</h3>
+      <p>Vì master template có default <code>controller=Home, action=Index</code>, cần tạo <code>HomeController</code> để xử lý request vào <code>/</code> (trang chủ):</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/HomeController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Controllers
+{
+    public class HomeController
+    {
+        // Xử lý GET /  (vì controller=Home, action=Index là default)
+        public string Index()
+        {
+            return "Hello World!";
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Attribute routing ghi đè Conventional routing</h3>
+      <p>Trong dự án dùng conventional routing, vẫn có thể ghi đè route của một action cụ thể bằng attribute. Khi action có attribute route, nó <strong>không</strong> còn tham gia vào conventional routing nữa — chỉ phản hồi đúng URL đã khai báo trong attribute.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs (kết hợp)</span><span class="lang">csharp</span></div>
+        <pre><code>public class DepartmentsController
+{
+    // Dùng conventional routing: GET /Departments/Index
+    public string Index() =&gt; "These are the departments.";
+
+    // Ghi đè bằng attribute routing: chỉ nhận GET /Department/{id?}
+    // Conventional routing KHÔNG còn map vào action này nữa
+    [HttpGet("/Department/{id?}")]
+    public string Details(int? id) =&gt; $"Department info: {id}";
+}</code></pre>
+      </div>
+
+      <h3>So sánh hai kiểu routing</h3>
+      <table class="tbl">
+        <tr><th></th><th>Attribute Routing</th><th>Conventional Routing</th></tr>
+        <tr><td>Khai báo route</td><td>Trực tiếp trên action/class</td><td>Một template chung trong <code>Program.cs</code></td></tr>
+        <tr><td>Phù hợp với</td><td>Web API (REST), route linh hoạt</td><td>Web app truyền thống (MVC + Views)</td></tr>
+        <tr><td>Độ rõ ràng</td><td>Cao — nhìn vào action biết ngay URL</td><td>Thấp hơn — phải biết quy ước ngầm</td></tr>
+        <tr><td>Kết hợp</td><td colspan="2" style="text-align:center">Có thể dùng song song: attribute ghi đè conventional cho action cụ thể</td></tr>
+      </table>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Lưu ý:</strong> Một action vừa có attribute route vừa nằm trong dự án dùng conventional routing sẽ <em>chỉ</em> phản hồi URL trong attribute. Nếu người dùng truy cập URL theo quy ước conventional, họ sẽ nhận 404.</p>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Scaffold nhanh:</strong> Trong Visual Studio, bạn có thể click chuột phải vào thư mục <em>Controllers</em> → <em>Add Controller</em> → chọn template <em>MVC Controller with read/write actions</em>. Framework sẽ tự sinh sẵn các action <code>Index / Details / Create / Edit / Delete</code> theo đúng quy ước conventional routing.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-07.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">07 · Tổ chức Code &amp; Dependency Injection</div>
+      </a>
+      <a class="next" href="lesson-09.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">09 · MVC Controllers — Model Binding &amp; Validation</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 01 — Introduction | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 01 — Introduction</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Giới thiệu khóa học</a></li>
+      <li><a href="#s2">2. ASP.NET Core là gì</a></li>
+      <li><a href="#s3">3. Giải phẫu ứng dụng ASP.NET Core</a></li>
+      <li><a href="#s4">4. Ứng dụng Web đầu tiên</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 01</span>
+      <h1>Introduction</h1>
+      <p class="lead">Tổng quan khóa học, hiểu ASP.NET Core là gì, cách một ứng dụng ASP.NET Core được cấu thành và tạo ứng dụng web đầu tiên.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Giới thiệu khóa học</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Introduction</em></p>
+
+      <p>Chào mừng bạn đến với khóa học <strong>ASP.NET Core Deep Dive</strong>. Mục tiêu của khóa học là giúp bạn
+        hiểu <strong>tường tận</strong> cách ASP.NET Core hoạt động và khai thác hết sức mạnh của framework này thông qua
+        các tình huống thực tế và hướng dẫn từng bước.</p>
+
+      <h3>Lộ trình khóa học</h3>
+      <p>Khóa học được chia thành các phần lớn, xây dựng kiến thức theo từng lớp:</p>
+      <ul>
+        <li><strong>Nền tảng:</strong> các khối kiến thức cơ bản của một ứng dụng web — giao thức HTTP, HttpContext, và
+          <em>middleware</em> (các thành phần phần mềm xếp thành một pipeline xử lý request/response). Bạn sẽ viết code ngay từ phần đầu tiên.</li>
+        <li><strong>Minimal API:</strong> routing, model binding, model validation, tạo kết quả trả về và tổ chức code.</li>
+        <li><strong>MVC:</strong> xây dựng ứng dụng web theo mô hình MVC — routing, binding, validation, Razor Views,
+          layout, tái sử dụng giao diện bằng Partial View và View Component, Tag Helpers, làm việc với form.</li>
+        <li><strong>Web API:</strong> tiêu thụ (consume) và tự xây dựng API bằng cả Controller lẫn Minimal API, tài liệu hóa với Swagger và versioning.</li>
+        <li><strong>Dữ liệu:</strong> truy cập cơ sở dữ liệu với Entity Framework Core, CRUD và migrations.</li>
+        <li><strong>Vận hành:</strong> cấu hình (options pattern), logging (kèm Serilog), xử lý ngoại lệ.</li>
+        <li><strong>Bảo mật:</strong> authentication &amp; authorization, Identity, và bảo mật API bằng JWT.</li>
+      </ul>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Triết lý khóa học:</strong> không chỉ học cách dùng, mà hiểu <em>tại sao</em> mọi thứ hoạt động như vậy.
+          Kiến thức được tích lũy dần — mỗi phần là nền tảng cho phần kế tiếp.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> ASP.NET Core là gì</h2>
+      <p class="subvideo-meta">Bài 2 · <em>What is ASP.NET Core</em></p>
+
+      <p><strong>ASP.NET Core</strong> là một framework phát triển web giúp lập trình viên xây dựng ứng dụng web.
+        Để hiểu nó, trước tiên cần hiểu một <strong>ứng dụng web (web application)</strong> là gì.</p>
+
+      <h3>Mô hình Client – Server</h3>
+      <p>Về bản chất, một ứng dụng web là chương trình giao tiếp giữa hai phía: <strong>client</strong> và <strong>server</strong>,
+        giao tiếp với nhau qua <strong>giao thức HTTP</strong>.</p>
+      <ul>
+        <li><strong>Client</strong> gửi một <em>HTTP request</em> đến server. Client thường là trình duyệt web, nhưng cũng có thể là
+          ứng dụng di động hoặc một server khác — bất cứ thứ gì có thể gửi HTTP request.</li>
+        <li><strong>Server</strong> (còn gọi là <em>web server</em>) lắng nghe các request, xử lý và gửi lại một <em>HTTP response</em>.</li>
+      </ul>
+      <p>ASP.NET Core giúp chúng ta xây dựng <strong>phía server</strong> của ứng dụng web.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> ASP.NET Core là mã nguồn mở, đa nền tảng (Windows, Linux, macOS), hiệu năng cao và
+          là thế hệ kế thừa hiện đại của ASP.NET truyền thống. Phiên bản dùng trong khóa học là <strong>.NET 9</strong>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Giải phẫu ứng dụng ASP.NET Core</h2>
+      <p class="subvideo-meta">Bài 3 · <em>ASP.NET Core Anatomy</em></p>
+
+      <p>Một ứng dụng ASP.NET Core thực chất là một <strong>ứng dụng console</strong> được khởi động từ phương thức <code>Main</code>.
+        Từ .NET 6 trở đi, với <em>top-level statements</em>, toàn bộ phần khởi tạo được gói gọn trong file <code>Program.cs</code>.</p>
+
+      <h3>Các thành phần chính</h3>
+      <table class="tbl">
+        <tr><th>Thành phần</th><th>Vai trò</th></tr>
+        <tr><td><code>WebApplicationBuilder</code></td><td>Tạo bởi <code>WebApplication.CreateBuilder(args)</code>; nơi đăng ký <strong>dịch vụ (services)</strong> vào DI container và cấu hình.</td></tr>
+        <tr><td><code>WebApplication</code> (<code>app</code>)</td><td>Đối tượng ứng dụng được <code>builder.Build()</code> tạo ra; nơi cấu hình <strong>middleware pipeline</strong> và định nghĩa endpoint.</td></tr>
+        <tr><td><code>app.Run()</code></td><td>Khởi động web server (Kestrel) và bắt đầu lắng nghe request.</td></tr>
+      </table>
+
+      <h3>Cấu trúc thư mục tiêu biểu</h3>
+      <ul>
+        <li><code>Program.cs</code> — điểm khởi đầu, cấu hình services &amp; pipeline.</li>
+        <li><code>appsettings.json</code> — cấu hình ứng dụng (chuỗi kết nối, logging…).</li>
+        <li><code>*.csproj</code> — file project, khai báo SDK và các package NuGet.</li>
+        <li><code>Properties/launchSettings.json</code> — cấu hình khi chạy ở môi trường phát triển (port, môi trường…).</li>
+        <li><code>wwwroot/</code> — chứa tài nguyên tĩnh (CSS, JS, hình ảnh).</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Ứng dụng Web đầu tiên</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Our first Web App</em></p>
+
+      <p>Hãy tạo ứng dụng web đầu tiên. Có thể dùng Visual Studio (template <em>ASP.NET Core Empty</em>) hoặc dòng lệnh .NET CLI.</p>
+
+      <h3>Tạo project bằng .NET CLI</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet new web -n MyFirstApp
+cd MyFirstApp
+dotnet run</code></pre>
+      </div>
+
+      <h3>Nội dung Program.cs tối giản</h3>
+      <p>Template <em>web</em> (Empty) sinh ra một file <code>Program.cs</code> ngắn gọn như sau:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapGet("/", () =&gt; "Hello World!");
+
+app.Run();</code></pre>
+      </div>
+
+      <p>Giải thích từng dòng:</p>
+      <ol class="steps">
+        <li><code>WebApplication.CreateBuilder(args)</code> tạo builder, nạp cấu hình mặc định và DI container.</li>
+        <li><code>builder.Build()</code> dựng đối tượng <code>app</code> để cấu hình pipeline.</li>
+        <li><code>app.MapGet("/", ...)</code> định nghĩa một endpoint: khi có request <code>GET /</code>, trả về chuỗi <code>"Hello World!"</code>.</li>
+        <li><code>app.Run()</code> khởi động server và bắt đầu lắng nghe.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Khi chạy <code>dotnet run</code>, terminal sẽ in ra địa chỉ dạng <code>http://localhost:5xxx</code>.
+          Mở địa chỉ này trên trình duyệt để thấy dòng chữ <strong>Hello World!</strong> — ứng dụng web đầu tiên của bạn đã chạy.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev disabled" href="#">&nbsp;</a>
+      <a class="next" href="lesson-02.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">02 · HTTP Protocol &amp; HTTP Context</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

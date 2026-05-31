@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 11 — MVC: Razor Views | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 11 — MVC: Razor Views</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Mô hình MVC</a></li>
+      <li><a href="#s2">2. Razor View là gì</a></li>
+      <li><a href="#s3">3. Truyền Model &amp; Biểu thức Razor ngầm</a></li>
+      <li><a href="#s4">4. Biểu thức Razor tường minh</a></li>
+      <li><a href="#s5">5. Code block trong Razor</a></li>
+      <li><a href="#s6">6. Cấu trúc điều kiện</a></li>
+      <li><a href="#s7">7. Cấu trúc lặp</a></li>
+      <li><a href="#s8">8. Bài tập 7 — Error View</a></li>
+      <li><a href="#s9">9. Đáp án 7 — Error View</a></li>
+      <li><a href="#s10">10. Razor Literal</a></li>
+      <li><a href="#s11">11. ViewData và ViewBag</a></li>
+      <li><a href="#s12">12. Bài tập 8 — Views cho CRUD</a></li>
+      <li><a href="#s13">13. Đáp án 8 — Danh sách phòng ban</a></li>
+      <li><a href="#s14">14. Đáp án 8 — Chỉnh sửa phòng ban</a></li>
+      <li><a href="#s15">15. Đáp án 8 — Thêm phòng ban</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 11</span>
+      <h1>MVC — Razor Views</h1>
+      <p class="lead">Cú pháp Razor và xây dựng View trong MVC — truyền model, biểu thức ngầm &amp; tường minh, code block, cấu trúc điều kiện &amp; lặp, Razor literal, ViewData/ViewBag, và hoàn thiện CRUD app với Views thực sự.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Mô hình MVC</h2>
+      <p class="subvideo-meta">Bài 1 · <em>MVC Pattern</em></p>
+
+      <p>Trước khi viết Razor View, cần hiểu tại sao MVC ra đời. Khi xây dựng ứng dụng CRUD phòng ban ở chương trước,
+        toàn bộ HTML được ghép chuỗi thủ công bên trong Controller — một phương pháp cực kỳ khó bảo trì.</p>
+
+      <h3>Vấn đề với Controller "chứa HTML"</h3>
+      <ul>
+        <li>Controller phải xử lý cả <strong>logic nghiệp vụ</strong> lẫn <strong>kết xuất giao diện</strong> — vi phạm nguyên tắc Single Responsibility.</li>
+        <li>HTML nhúng trong chuỗi C# không có IntelliSense, dễ sai cú pháp, khó đọc.</li>
+        <li>Không thể tái sử dụng giao diện giữa các action method khác nhau.</li>
+      </ul>
+
+      <h3>MVC giải quyết vấn đề như thế nào</h3>
+      <p><strong>MVC (Model – View – Controller)</strong> là kiến trúc tách biệt ba trách nhiệm:</p>
+      <table class="tbl">
+        <tr><th>Thành phần</th><th>Trách nhiệm</th></tr>
+        <tr><td><strong>Model</strong></td><td>Biểu diễn dữ liệu và logic nghiệp vụ (class <code>Department</code>, <code>DepartmentsRepository</code>).</td></tr>
+        <tr><td><strong>View</strong></td><td>Tạo HTML trả về cho client. Chỉ biết cách <em>hiển thị</em> dữ liệu nhận được.</td></tr>
+        <tr><td><strong>Controller</strong></td><td>Điều phối: nhận request, gọi Model, chọn View phù hợp, truyền dữ liệu cho View.</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Nguyên tắc cốt lõi:</strong> Controller <em>không</em> viết HTML. Controller <em>không</em> chứa logic hiển thị.
+          View <em>không</em> truy vấn cơ sở dữ liệu. Ranh giới này giúp code dễ kiểm thử và bảo trì.</p>
+      </div>
+
+      <h3>Luồng xử lý request trong MVC</h3>
+      <ol class="steps">
+        <li>Client gửi HTTP request đến server (vd: <code>GET /departments</code>).</li>
+        <li>Routing ánh xạ request đến <strong>Controller</strong> và <strong>action method</strong> tương ứng (<code>DepartmentsController.Index()</code>).</li>
+        <li>Action method gọi <strong>Model</strong> để lấy dữ liệu (<code>DepartmentsRepository.GetDepartments()</code>).</li>
+        <li>Controller gọi <code>View(model)</code> — ASP.NET Core tìm file <code>.cshtml</code> tương ứng và render HTML.</li>
+        <li>HTML hoàn chỉnh được gửi về client qua HTTP response.</li>
+      </ol>
+
+      <h3>Đăng ký MVC trong Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký MVC Controllers + Views
+builder.Services.AddControllersWithViews();
+
+var app = builder.Build();
+
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}"
+    );
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><code>AddControllersWithViews()</code> khác với <code>AddControllers()</code> (chỉ dùng cho Web API).
+          Phương thức này bổ sung hỗ trợ Razor View Engine, ViewResult, ViewData, v.v.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Razor View là gì</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Razor View</em></p>
+
+      <p>Thay vì nhúng HTML vào Controller dưới dạng chuỗi, ASP.NET Core cho phép đặt HTML vào các file riêng có phần mở rộng
+        <strong><code>.cshtml</code></strong> — đây là <strong>Razor View</strong>.</p>
+
+      <h3>Razor là gì</h3>
+      <p><strong>Razor</strong> là template engine của ASP.NET Core. Nó cho phép viết <strong>HTML thuần</strong> kết hợp với
+        <strong>code C#</strong> trong cùng một file. Ký tự <code>@</code> là ranh giới: mọi thứ sau <code>@</code> được
+        Razor coi là biểu thức hoặc khối code C#.</p>
+
+      <h3>Quy ước đặt tên và vị trí file</h3>
+      <p>ASP.NET Core tìm View theo <strong>convention-over-configuration</strong>:</p>
+      <ul>
+        <li>View cho <code>DepartmentsController.Index()</code> nằm tại <code>Views/Departments/Index.cshtml</code>.</li>
+        <li>View cho <code>HomeController.Index()</code> nằm tại <code>Views/Home/Index.cshtml</code>.</li>
+        <li>Tên thư mục = tên Controller (bỏ hậu tố <code>Controller</code>). Tên file = tên action method.</li>
+      </ul>
+
+      <h3>Cấu trúc thư mục Views chuẩn</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Cây thư mục</span><span class="lang">text</span></div>
+        <pre><code>WebApp/
+├── Controllers/
+│   ├── HomeController.cs
+│   └── DepartmentsController.cs
+├── Models/
+│   ├── Department.cs
+│   └── DepartmentsRepository.cs
+├── Views/
+│   ├── Home/
+│   │   └── Index.cshtml
+│   └── Departments/
+│       ├── Index.cshtml
+│       └── Details.cshtml
+└── Program.cs</code></pre>
+      </div>
+
+      <h3>Razor View đơn giản nhất</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>&lt;html&gt;
+&lt;body&gt;
+    &lt;h1&gt;Welcome home!&lt;/h1&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <p>Controller trả về View này bằng cách gọi phương thức <code>View()</code> không tham số:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/HomeController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class HomeController : Controller
+{
+    public IActionResult Index()
+    {
+        return View(); // tìm Views/Home/Index.cshtml theo convention
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Trong Visual Studio, bạn có thể tạo View nhanh bằng cách <strong>right-click</strong>
+          vào tên action method → <strong>Add View</strong> → chọn <em>Razor View – Empty</em>. Visual Studio sẽ tự tạo
+          thư mục và file đúng convention.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Truyền Model &amp; Biểu thức Razor ngầm</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Passing Model to View and Implicit Razor Expression</em></p>
+
+      <p>View chỉ hiển thị dữ liệu — dữ liệu phải được Controller <strong>truyền vào</strong>. Cơ chế này gọi là
+        <strong>passing model to View</strong>. Sau khi có model, View dùng <strong>biểu thức Razor ngầm (implicit Razor expression)</strong>
+        để xuất giá trị ra HTML.</p>
+
+      <h3>Bước 1 — Controller truyền model</h3>
+      <p>Dùng overload <code>View(object model)</code> của phương thức <code>View()</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class DepartmentsController : Controller
+{
+    [HttpGet]
+    public IActionResult Details(int id)
+    {
+        var department = DepartmentsRepository.GetDepartmentById(id);
+        if (department == null)
+        {
+            return Content("&lt;h3 style='color:red'&gt;Department not found.&lt;/h3&gt;");
+        }
+
+        return View(department); // truyền object Department vào View
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 2 — View khai báo kiểu model với @model</h3>
+      <p>Ở đầu file <code>.cshtml</code>, dùng directive <code>@model</code> để khai báo kiểu dữ liệu nhận được.
+        Sau đó dùng thuộc tính <code>Model</code> (viết hoa) để truy cập dữ liệu.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Details.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@using WebApp.Models
+@model Department
+
+&lt;html&gt;
+&lt;body&gt;
+    &lt;h1&gt;Department&lt;/h1&gt;
+    &lt;p&gt;@Model.Id&lt;/p&gt;
+    &lt;p&gt;@Model.Name&lt;/p&gt;
+    &lt;p&gt;@Model.Description&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Biểu thức Razor ngầm (Implicit Expression)</h3>
+      <p>Cú pháp <code>@&lt;biểu_thức&gt;</code> (không có dấu ngoặc đơn) gọi là <strong>implicit Razor expression</strong>.
+        Razor tự nhận ra kết thúc của biểu thức khi gặp khoảng trắng, dấu chấm câu, hoặc thẻ HTML.</p>
+
+      <table class="tbl">
+        <tr><th>Razor</th><th>Kết quả HTML</th></tr>
+        <tr><td><code>@Model.Name</code></td><td>Giá trị của thuộc tính <code>Name</code></td></tr>
+        <tr><td><code>@Model.Id</code></td><td>Giá trị của thuộc tính <code>Id</code></td></tr>
+        <tr><td><code>@department.Id</code> (trong vòng lặp)</td><td>Id của phần tử hiện tại</td></tr>
+        <tr><td><code>@DateTime.Now</code></td><td>Ngày giờ hiện tại</td></tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Razor tự động <strong>HTML-encode</strong> giá trị xuất ra — ký tự đặc biệt như
+          <code>&lt;</code> <code>&gt;</code> <code>&amp;</code> sẽ được chuyển thành entity an toàn, ngăn chặn XSS.
+          Muốn xuất HTML thô (không encode) phải dùng <code>Html.Raw()</code>.</p>
+      </div>
+
+      <h3>Truyền danh sách làm model</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Index()
+{
+    var departments = DepartmentsRepository.GetDepartments();
+    return View(departments); // truyền List&lt;Department&gt;
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml (phiên bản đầu)</span><span class="lang">html</span></div>
+        <pre><code>@using WebApp.Models
+@model List&lt;Department&gt;
+
+&lt;html&gt;
+&lt;body&gt;
+    &lt;h1&gt;Department List&lt;/h1&gt;
+    &lt;ul&gt;
+        @if (Model is not null &amp;&amp; Model.Count &gt; 0)
+        {
+            foreach (var department in Model)
+            {
+                &lt;li&gt;&lt;a href='/departments/details/@department.Id'&gt;@department.Name - @department.Description&lt;/a&gt;&lt;/li&gt;
+            }
+        }
+    &lt;/ul&gt;
+    &lt;br/&gt;
+    &lt;a href='/departments/create'&gt;Add Department&lt;/a&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Biểu thức Razor tường minh</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Explicit Razor Expression</em></p>
+
+      <p><strong>Implicit expression</strong> hoạt động tốt khi biểu thức là một property đơn giản. Nhưng khi biểu thức
+        phức tạp hơn — ví dụ phép tính, gọi constructor với tham số, hoặc nối chuỗi — Razor không thể tự xác định ranh giới.
+        Lúc này dùng <strong>explicit Razor expression</strong>: <code>@(biểu_thức)</code>.</p>
+
+      <h3>Ví dụ: hiển thị ngày hiện tại</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>&lt;html&gt;
+&lt;body&gt;
+    &lt;p&gt;Hôm nay: @DateTime.Today&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Ví dụ: số ngày đến Giáng sinh (cần explicit)</h3>
+      <p>Biểu thức <code>new DateTime(...) - DateTime.Today</code> có khoảng trắng và toán tử trừ — Razor sẽ nhầm ranh giới
+        nếu dùng implicit. Ta cần bọc trong dấu ngoặc đơn:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>&lt;html&gt;
+&lt;body&gt;
+    &lt;p&gt;Số ngày đến Giáng sinh:
+        @(new DateTime(DateTime.Today.Year, 12, 25) - DateTime.Today)
+    &lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Khi nào dùng explicit vs implicit</h3>
+      <table class="tbl">
+        <tr><th>Trường hợp</th><th>Dùng</th><th>Ví dụ</th></tr>
+        <tr><td>Property đơn giản</td><td>Implicit <code>@</code></td><td><code>@Model.Name</code></td></tr>
+        <tr><td>Gọi method không tham số</td><td>Implicit <code>@</code></td><td><code>@DateTime.Now</code></td></tr>
+        <tr><td>Phép tính, constructor, nối chuỗi</td><td>Explicit <code>@(...)</code></td><td><code>@(a + b)</code></td></tr>
+        <tr><td>Biểu thức có khoảng trắng bên trong</td><td>Explicit <code>@(...)</code></td><td><code>@(Model.Name ?? "N/A")</code></td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Khi không chắc dùng loại nào, cứ dùng <strong>explicit</strong> — luôn hoạt động đúng
+          và code rõ ràng hơn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Code block trong Razor</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Code Blocks</em></p>
+
+      <p>Khi cần khai báo biến, tính toán trước rồi mới dùng trong View, Razor cung cấp <strong>code block</strong>:
+        cú pháp <code>@{ ... }</code>. Bên trong code block là C# thuần, Razor không render ra HTML.
+        Biến khai báo trong code block có thể dùng ở bất kỳ đâu sau đó trong cùng View.</p>
+
+      <h3>Cú pháp</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Cú pháp cơ bản</span><span class="lang">html</span></div>
+        <pre><code>@{
+    // Code C# thuần — khai báo biến, tính toán, gọi hàm
+    var color = "green";
+    var message = $"Xin chào, {Model.Name}!";
+}
+
+&lt;p style="color: @color"&gt;@message&lt;/p&gt;</code></pre>
+      </div>
+
+      <h3>Ví dụ thực tế — tính màu và số ngày</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@{
+    var days = new DateTime(DateTime.Today.Year, 12, 25) - DateTime.Today;
+
+    if (DateTime.Today &gt; new DateTime(DateTime.Today.Year, 12, 25))
+    {
+        days = new DateTime(DateTime.Today.Year + 1, 12, 25) - DateTime.Today;
+    }
+
+    string color = days.Days % 2 == 0 ? "green" : "red";
+}
+
+@if (days.Days &lt;= 10)
+{
+    &lt;h1&gt;Christmas is around the corner!&lt;/h1&gt;
+}
+else
+{
+    switch (color)
+    {
+        case "green":
+            &lt;h1 style="color:green"&gt;Welcome home!&lt;/h1&gt;
+            break;
+        case "red":
+            &lt;h1 style="color:red"&gt;Welcome home!&lt;/h1&gt;
+            break;
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Code block <code>@{ }</code> thường đặt ở <strong>đầu file</strong> (sau <code>@model</code>)
+          để khai báo tất cả biến cần dùng. Nội dung bên trong không bị render thành HTML — chỉ là C# thuần.</p>
+      </div>
+
+      <h3>Viết HTML bên trong code block</h3>
+      <p>Muốn xuất HTML từ bên trong code block, bao nội dung trong thẻ HTML bình thường — Razor tự nhận ra và render:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ</span><span class="lang">html</span></div>
+        <pre><code>@{
+    for (int i = 1; i &lt;= 3; i++)
+    {
+        &lt;p&gt;Dòng số @i&lt;/p&gt;  @* HTML bên trong code block *@
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Comment trong Razor dùng cú pháp <code>@* ... *@</code> — không bị render ra HTML,
+          khác với comment HTML <code>&lt;!-- ... --&gt;</code> vẫn xuất hiện trong response.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Cấu trúc điều kiện</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Conditional Control Structure</em></p>
+
+      <p>Razor cho phép dùng các cấu trúc điều kiện C# (<code>if/else</code>, <code>switch</code>) ngay trong View
+        để kiểm soát việc <strong>render phần tử HTML nào</strong> tùy điều kiện. Chỉ cần thêm <code>@</code> trước
+        từ khóa, phần thân bao gồm cả HTML và C# tự do xen kẽ nhau.</p>
+
+      <h3>if / else</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@{
+    var days = new DateTime(DateTime.Today.Year, 12, 25) - DateTime.Today;
+    if (DateTime.Today &gt; new DateTime(DateTime.Today.Year, 12, 25))
+    {
+        days = new DateTime(DateTime.Today.Year + 1, 12, 25) - DateTime.Today;
+    }
+    string color = days.Days % 2 == 0 ? "green" : "red";
+}
+
+@if (days.Days &lt;= 10)
+{
+    &lt;h1&gt;Christmas is around the corner!&lt;/h1&gt;
+}
+else
+{
+    &lt;h1 style="color: @color"&gt;Welcome home!&lt;/h1&gt;
+}</code></pre>
+      </div>
+
+      <h3>switch / case</h3>
+      <p>Cú pháp <code>@switch</code> hoạt động như C# bình thường, nhưng bên trong mỗi <code>case</code> có thể viết HTML:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ switch trong Razor</span><span class="lang">html</span></div>
+        <pre><code>@switch (color)
+{
+    case "green":
+        &lt;h1 style="color:green"&gt;Welcome home!&lt;/h1&gt;
+        break;
+    case "red":
+        &lt;h1 style="color:red"&gt;Welcome home!&lt;/h1&gt;
+        break;
+    default:
+        &lt;h1&gt;Welcome!&lt;/h1&gt;
+        break;
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span>Điểm mạnh của Razor: bạn có thể <strong>xen kẽ HTML và C# tự nhiên</strong> bên
+          trong cùng một khối lệnh điều kiện mà không cần ghép chuỗi hay escape thủ công.</p>
+      </div>
+
+      <h3>Kiểm tra null với @if</h3>
+      <p>Trước khi truy cập thuộc tính của model, luôn kiểm tra null để tránh <code>NullReferenceException</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Kiểm tra null an toàn</span><span class="lang">html</span></div>
+        <pre><code>@if (Model is not null)
+{
+    &lt;p&gt;@Model.Name&lt;/p&gt;
+}
+else
+{
+    &lt;p&gt;Không có dữ liệu.&lt;/p&gt;
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Cấu trúc lặp</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Iterative Control Structure</em></p>
+
+      <p>Razor hỗ trợ đầy đủ các cấu trúc lặp của C#: <code>for</code>, <code>foreach</code>, <code>while</code>,
+        <code>do-while</code>. Cú pháp: thêm <code>@</code> trước từ khóa, phần thân xen HTML và C# tự nhiên.</p>
+
+      <h3>foreach — dùng phổ biến nhất</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@using WebApp.Models
+@model List&lt;Department&gt;
+
+&lt;html&gt;
+&lt;body&gt;
+    &lt;h1&gt;Department List&lt;/h1&gt;
+    &lt;ul&gt;
+        @if (Model is not null &amp;&amp; Model.Count &gt; 0)
+        {
+            foreach (var department in Model)
+            {
+                &lt;li&gt;
+                    &lt;a href='/departments/details/@department.Id'&gt;
+                        @department.Name - @department.Description
+                    &lt;/a&gt;
+                &lt;/li&gt;
+            }
+        }
+    &lt;/ul&gt;
+    &lt;br/&gt;
+    &lt;a href='/departments/create'&gt;Add Department&lt;/a&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>for — khi cần chỉ số</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ for với chỉ số</span><span class="lang">html</span></div>
+        <pre><code>@for (int i = 0; i &lt; Model.Count; i++)
+{
+    &lt;p&gt;@(i + 1). @Model[i].Name&lt;/p&gt;
+}</code></pre>
+      </div>
+
+      <h3>while — khi điều kiện động</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ while</span><span class="lang">html</span></div>
+        <pre><code>@{
+    int i = 0;
+}
+@while (i &lt; Model.Count)
+{
+    &lt;p&gt;@Model[i].Name&lt;/p&gt;
+    i++;
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Khi dùng <code>@foreach</code> hoặc <code>@for</code> bên trong HTML,
+          Razor tự nhận biết phần HTML bên trong phần thân vòng lặp mà không cần thêm <code>@</code> cho từng thẻ.
+          Chỉ dùng <code>@</code> khi muốn xuất giá trị C# (<code>@department.Name</code>).</p>
+      </div>
+
+      <h3>Controller tương ứng</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class DepartmentsController : Controller
+{
+    [HttpGet]
+    public IActionResult Index()
+    {
+        var departments = DepartmentsRepository.GetDepartments();
+        return View(departments); // truyền List&lt;Department&gt; vào View
+    }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Bài tập 7 — Error View</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Assignment 7 – Error View</em></p>
+
+      <p>Sau khi học cách tạo View, đây là bài tập thực hành đầu tiên.</p>
+
+      <h3>Yêu cầu</h3>
+      <p>Trong <code>DepartmentsController</code>, nhiều action method hiện đang trả về lỗi theo kiểu <code>Content(html, "text/html")</code>
+        — HTML lỗi được ghép chuỗi trực tiếp trong Controller. Hãy:</p>
+      <ol class="steps">
+        <li>Tạo một Razor View tên <code>Error.cshtml</code> bên trong thư mục <code>Views/Departments/</code>.</li>
+        <li>View nhận một <strong>danh sách chuỗi lỗi</strong> (<code>List&lt;string&gt;</code>) làm model.</li>
+        <li>View hiển thị các lỗi dưới dạng danh sách HTML có màu đỏ.</li>
+        <li>Controller thay thế tất cả chỗ trả về HTML lỗi thủ công bằng <code>View("Error", errorList)</code>.</li>
+      </ol>
+
+      <h3>Phân tích các trường hợp lỗi trong Controller</h3>
+      <table class="tbl">
+        <tr><th>Action method</th><th>Tình huống lỗi</th></tr>
+        <tr><td><code>Details(int id)</code></td><td>Không tìm thấy department theo id</td></tr>
+        <tr><td><code>Edit(Department)</code></td><td>Model validation thất bại</td></tr>
+        <tr><td><code>Create(Department)</code></td><td>Model validation thất bại</td></tr>
+        <tr><td><code>Delete(int id)</code></td><td>Không tìm thấy department</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Gợi ý: viết một private helper method <code>GetErrors()</code> trả về
+          <code>List&lt;string&gt;</code> bằng cách duyệt <code>ModelState.Values</code>. Dùng method này cho tất cả
+          các trường hợp validation lỗi.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Đáp án 7 — Error View</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Assignment 7 (Answer) – Error View</em></p>
+
+      <h3>Error.cshtml — View hiển thị lỗi</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Error.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@model List&lt;string&gt;
+
+&lt;html&gt;
+&lt;head&gt;
+    &lt;title&gt;Error&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;h1 style="color:red"&gt;Errors:&lt;/h1&gt;
+    &lt;ul&gt;
+        @if (Model is not null &amp;&amp; Model.Count &gt; 0)
+        {
+            foreach (var errorMessage in Model)
+            {
+                &lt;li&gt;@errorMessage&lt;/li&gt;
+            }
+        }
+    &lt;/ul&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Controller sau khi refactor</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class DepartmentsController : Controller
+{
+    [HttpGet]
+    public IActionResult Details(int id)
+    {
+        var department = DepartmentsRepository.GetDepartmentById(id);
+        if (department == null)
+        {
+            // Thay thế Content(html) bằng View("Error", list)
+            return View("Error", new List&lt;string&gt;() { "Department not found." });
+        }
+        return View(department);
+    }
+
+    [HttpPost]
+    public IActionResult Edit(Department department)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View("Error", GetErrors());
+        }
+        DepartmentsRepository.UpdateDepartment(department);
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    public IActionResult Create(Department department)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View("Error", GetErrors());
+        }
+        DepartmentsRepository.AddDepartment(department);
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    public IActionResult Delete(int id)
+    {
+        var department = DepartmentsRepository.GetDepartmentById(id);
+        if (department == null)
+        {
+            ModelState.AddModelError("id", "Department not found.");
+            return View("Error", GetErrors());
+        }
+        DepartmentsRepository.DeleteDepartment(department);
+        return RedirectToAction(nameof(Index));
+    }
+
+    // Helper: trích xuất lỗi từ ModelState
+    private List&lt;string&gt; GetErrors()
+    {
+        var errors = new List&lt;string&gt;();
+        foreach (var value in ModelState.Values)
+        {
+            foreach (var error in value.Errors)
+            {
+                errors.Add(error.ErrorMessage);
+            }
+        }
+        return errors;
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><code>View("Error", model)</code> chỉ định <strong>tên View tường minh</strong>.
+          Khi bạn truyền tên như vậy, ASP.NET Core tìm <code>Views/Departments/Error.cshtml</code> trước, sau đó
+          <code>Views/Shared/Error.cshtml</code>. Không cần phải View cùng tên với action method.</p>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Lưu ý cách truyền model: <code>View("Error", GetErrors())</code> — tham số thứ nhất
+          là tên View (chuỗi), tham số thứ hai là model object. Không nhầm với <code>View(model)</code> chỉ có một tham số.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Razor Literal</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Razor Literal</em></p>
+
+      <p>Vấn đề: bên trong <code>@if</code> hay <code>@{ }</code>, nếu muốn xuất văn bản thuần (không phải thẻ HTML),
+        Razor sẽ coi nó là code C# và báo lỗi. Để xuất chuỗi văn bản từ trong code block hoặc cấu trúc điều kiện,
+        dùng <strong>Razor literal</strong>.</p>
+
+      <h3>Cách 1 — Bọc trong thẻ HTML</h3>
+      <p>Giải pháp đơn giản nhất: bọc nội dung trong bất kỳ thẻ HTML nào (thường dùng <code>&lt;text&gt;</code> nếu không muốn thêm thẻ):</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Bọc trong thẻ HTML thực</span><span class="lang">html</span></div>
+        <pre><code>@if (days.Days &lt;= 10)
+{
+    &lt;p&gt;Còn @days.Days ngày nữa đến Giáng sinh!&lt;/p&gt;
+}</code></pre>
+      </div>
+
+      <h3>Cách 2 — Thẻ &lt;text&gt; (Razor-only, không render ra HTML)</h3>
+      <p>Thẻ <code>&lt;text&gt;</code> là thẻ đặc biệt của Razor — nó không xuất hiện trong HTML cuối cùng, chỉ dùng để
+        báo Razor "phần này là nội dung văn bản, không phải code":</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Dùng &lt;text&gt;</span><span class="lang">html</span></div>
+        <pre><code>@if (days.Days &lt;= 10)
+{
+    &lt;text&gt;Còn @days.Days ngày!&lt;/text&gt;
+}</code></pre>
+      </div>
+
+      <h3>Cách 3 — @: (inline text)</h3>
+      <p>Dùng <code>@:</code> để xuất một dòng văn bản thuần từ trong code block:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Dùng @: inline text</span><span class="lang">html</span></div>
+        <pre><code>@if (days.Days &lt;= 10)
+{
+    @:Còn @days.Days ngày nữa đến Giáng sinh!
+}</code></pre>
+      </div>
+
+      <h3>Ví dụ đầy đủ từ dự án</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@{
+    var days = new DateTime(DateTime.Today.Year, 12, 25) - DateTime.Today;
+    if (DateTime.Today &gt; new DateTime(DateTime.Today.Year, 12, 25))
+    {
+        days = new DateTime(DateTime.Today.Year + 1, 12, 25) - DateTime.Today;
+    }
+    string color = days.Days % 2 == 0 ? "green" : "red";
+}
+
+@if (days.Days &lt;= 10)
+{
+    &lt;h1&gt;Christmas is around the corner!&lt;/h1&gt;
+    &lt;p&gt;Còn đúng @days.Days ngày nữa!&lt;/p&gt;
+}
+else
+{
+    switch (color)
+    {
+        case "green":
+            &lt;h1 style="color:green"&gt;Welcome home!&lt;/h1&gt;
+            break;
+        case "red":
+            &lt;h1 style="color:red"&gt;Welcome home!&lt;/h1&gt;
+            break;
+    }
+    &lt;p&gt;Còn @days.Days ngày đến Giáng sinh.&lt;/p&gt;
+}</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Kỹ thuật</th><th>Cú pháp</th><th>Khi dùng</th></tr>
+        <tr><td>Bọc trong thẻ HTML</td><td><code>&lt;p&gt;nội dung&lt;/p&gt;</code></td><td>Khi cần thêm thẻ HTML</td></tr>
+        <tr><td>Thẻ &lt;text&gt;</td><td><code>&lt;text&gt;nội dung&lt;/text&gt;</code></td><td>Không muốn thêm thẻ HTML thừa</td></tr>
+        <tr><td>Inline text @:</td><td><code>@:nội dung một dòng</code></td><td>Xuất nhanh một dòng văn bản</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 11 ============ -->
+    <section class="section" id="s11">
+      <h2><span class="num">11</span> ViewData và ViewBag</h2>
+      <p class="subvideo-meta">Bài 11 · <em>ViewData and ViewBag</em></p>
+
+      <p>Ngoài cách truyền model qua <code>View(model)</code>, ASP.NET Core còn cung cấp hai cơ chế bổ sung để
+        truyền dữ liệu từ Controller sang View: <strong>ViewData</strong> và <strong>ViewBag</strong>.</p>
+
+      <h3>Tại sao cần ViewData/ViewBag</h3>
+      <p>Đôi khi bạn cần truyền thêm thông tin <em>phụ</em> (ví dụ: tiêu đề trang, thông báo trạng thái) mà không muốn
+        sửa class Model để thêm thuộc tính. ViewData/ViewBag là giải pháp nhanh cho trường hợp này.</p>
+
+      <h3>ViewData — dictionary kiểu động</h3>
+      <p><code>ViewData</code> là <code>ViewDataDictionary</code>, một dictionary với key là <code>string</code>
+        và value là <code>object?</code>. Cần ép kiểu khi đọc trong View.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controller — gán ViewData</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Details(int id)
+{
+    ViewData["PageTitle"] = "Chi tiết phòng ban";
+    ViewData["ShowTimestamp"] = true;
+
+    var department = DepartmentsRepository.GetDepartmentById(id);
+    return View(department);
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">View — đọc ViewData</span><span class="lang">html</span></div>
+        <pre><code>@model WebApp.Models.Department
+
+&lt;html&gt;
+&lt;head&gt;
+    &lt;title&gt;@ViewData["PageTitle"]&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;h1&gt;@ViewData["PageTitle"]&lt;/h1&gt;
+    &lt;p&gt;@Model.Name&lt;/p&gt;
+    @if ((bool?)ViewData["ShowTimestamp"] == true)
+    {
+        &lt;p&gt;Xem lúc: @DateTime.Now&lt;/p&gt;
+    }
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>ViewBag — wrapper dynamic của ViewData</h3>
+      <p><code>ViewBag</code> là một <code>dynamic</code> wrapper bọc quanh <code>ViewData</code>. Không cần ép kiểu,
+        dùng cú pháp property trực tiếp. Bên dưới, <code>ViewBag.PageTitle</code> và <code>ViewData["PageTitle"]</code>
+        cùng trỏ đến một giá trị.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controller — gán ViewBag</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Index()
+{
+    ViewBag.PageTitle = "Danh sách phòng ban";
+    ViewBag.TotalCount = DepartmentsRepository.GetDepartments().Count;
+
+    var departments = DepartmentsRepository.GetDepartments();
+    return View(departments);
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">View — đọc ViewBag</span><span class="lang">html</span></div>
+        <pre><code>@model List&lt;WebApp.Models.Department&gt;
+
+&lt;html&gt;
+&lt;body&gt;
+    &lt;h1&gt;@ViewBag.PageTitle&lt;/h1&gt;
+    &lt;p&gt;Tổng số: @ViewBag.TotalCount phòng ban&lt;/p&gt;
+    &lt;ul&gt;
+        @foreach (var dept in Model)
+        {
+            &lt;li&gt;@dept.Name&lt;/li&gt;
+        }
+    &lt;/ul&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>So sánh ba cách truyền dữ liệu</h3>
+      <table class="tbl">
+        <tr><th>Cách</th><th>Type-safety</th><th>IntelliSense</th><th>Khi nào dùng</th></tr>
+        <tr><td><strong>Model (strongly typed)</strong></td><td>Có</td><td>Đầy đủ</td><td>Dữ liệu chính của View — luôn ưu tiên</td></tr>
+        <tr><td><strong>ViewData</strong></td><td>Không (object)</td><td>Không</td><td>Metadata phụ, cần ép kiểu khi đọc</td></tr>
+        <tr><td><strong>ViewBag</strong></td><td>Không (dynamic)</td><td>Không</td><td>Metadata phụ, cú pháp ngắn hơn ViewData</td></tr>
+      </table>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>ViewData và ViewBag là <strong>weakly typed</strong> — lỗi tên key hay sai kiểu
+          chỉ phát hiện lúc runtime, không compile-time. Chỉ dùng khi thực sự cần thiết; ưu tiên strongly-typed model
+          cho dữ liệu chính của View.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 12 ============ -->
+    <section class="section" id="s12">
+      <h2><span class="num">12</span> Bài tập 8 — Implement Views cho CRUD</h2>
+      <p class="subvideo-meta">Bài 12 · <em>Assignment 8 – Implement Views for the Departments CRUD App</em></p>
+
+      <p>Đây là bài tập lớn nhất của chương: biến ứng dụng Departments CRUD (vốn dùng HTML hard-coded trong Controller)
+        thành ứng dụng MVC đúng nghĩa với các Razor View riêng biệt.</p>
+
+      <h3>Điểm xuất phát</h3>
+      <p>Bạn có sẵn project DepartsCRUD với <code>DepartmentsRepository</code> và <code>DepartmentsController</code>
+        đang hoạt động. Vấn đề hiện tại: HTML được ghép chuỗi trong từng action method. File <code>Error.cshtml</code>
+        đã được tạo ở bài 9.</p>
+
+      <h3>Yêu cầu</h3>
+      <ol class="steps">
+        <li>Tạo <code>Views/Departments/Index.cshtml</code> — hiển thị danh sách tất cả departments dưới dạng bảng HTML.
+          Model: <code>List&lt;Department&gt;</code>.</li>
+        <li>Tạo <code>Views/Departments/Details.cshtml</code> — form cho phép chỉnh sửa (Edit) một department.
+          Model: <code>Department</code>. Kèm nút Delete.</li>
+        <li>Tạo <code>Views/Departments/Create.cshtml</code> — form thêm department mới.
+          Model: <code>Department</code> (object rỗng).</li>
+        <li><strong>Bonus (tùy chọn):</strong> thêm Bootstrap CSS để giao diện đẹp hơn.</li>
+      </ol>
+
+      <h3>Model cần dùng</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Department.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+namespace WebApp.Models
+{
+    public class Department
+    {
+        public Department() { }
+
+        public Department(int id, string name, string? description = "")
+        {
+            Id = id;
+            Name = name;
+            Description = description;
+        }
+
+        public int Id { get; set; }
+
+        [Required]
+        public string? Name { get; set; }
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Để thêm Bootstrap: truy cập <a href="https://getbootstrap.com" target="_blank">getbootstrap.com</a>
+          → Docs → Download → sao chép link CDN CSS và dán vào phần <code>&lt;head&gt;</code> của mỗi View.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 13 ============ -->
+    <section class="section" id="s13">
+      <h2><span class="num">13</span> Đáp án 8 — Danh sách phòng ban</h2>
+      <p class="subvideo-meta">Bài 13 · <em>Assignment 8 (Answer) – Department List</em></p>
+
+      <p>Bắt đầu từ <code>Index.cshtml</code> — View hiển thị danh sách phòng ban dưới dạng bảng Bootstrap.</p>
+
+      <h3>Index.cshtml — danh sách departments</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@using WebApp.Models
+@model List&lt;Department&gt;
+
+&lt;html&gt;
+&lt;head&gt;
+    &lt;link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          rel="stylesheet"&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;div class="container"&gt;
+
+        &lt;h3&gt;Departments&lt;/h3&gt;
+
+        @if (Model is not null &amp;&amp; Model.Count &gt; 0)
+        {
+            &lt;table class="table table-striped"&gt;
+                &lt;thead&gt;
+                    &lt;tr&gt;
+                        &lt;th&gt;Name&lt;/th&gt;
+                        &lt;th&gt;Description&lt;/th&gt;
+                        &lt;th&gt;&lt;/th&gt;
+                    &lt;/tr&gt;
+                &lt;/thead&gt;
+                &lt;tbody&gt;
+                    @foreach (var department in Model)
+                    {
+                        &lt;tr&gt;
+                            &lt;td&gt;@department.Name&lt;/td&gt;
+                            &lt;td&gt;@department.Description&lt;/td&gt;
+                            &lt;td&gt;
+                                &lt;a class="btn btn-link"
+                                   href="/departments/details/@department.Id"&gt;Edit&lt;/a&gt;
+                            &lt;/td&gt;
+                        &lt;/tr&gt;
+                    }
+                &lt;/tbody&gt;
+            &lt;/table&gt;
+        }
+
+        &lt;br/&gt;
+        &lt;a class="btn btn-primary" href='/departments/create'&gt;Add&lt;/a&gt;
+
+    &lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Controller — action Index</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs (Index)</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Index()
+{
+    var departments = DepartmentsRepository.GetDepartments();
+    return View(departments); // View(List&lt;Department&gt;) → Index.cshtml
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Khi sử dụng Bootstrap CDN, <strong>không</strong> cần copy file JS Bootstrap
+          vào Views — chỉ cần CSS là đủ cho table, button, và layout cơ bản.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 14 ============ -->
+    <section class="section" id="s14">
+      <h2><span class="num">14</span> Đáp án 8 — Chỉnh sửa phòng ban</h2>
+      <p class="subvideo-meta">Bài 14 · <em>Assignment 8 (Answer) – Edit Department</em></p>
+
+      <p>Tiếp theo là <code>Details.cshtml</code> — View hiển thị form Edit một phòng ban với thông tin hiện tại được
+        điền sẵn, kèm nút Delete.</p>
+
+      <h3>Details.cshtml — form Edit + Delete</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Details.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@using WebApp.Models
+@model Department
+
+&lt;html&gt;
+&lt;head&gt;
+    &lt;link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          rel="stylesheet"&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;div class="container"&gt;
+        &lt;h3&gt;Department&lt;/h3&gt;
+
+        &lt;!-- Form Edit --&gt;
+        &lt;form method='post' action='/departments/edit'&gt;
+            &lt;!-- Hidden field giữ Id --&gt;
+            &lt;input type='hidden' name='Id' value='@Model.Id' /&gt;
+
+            &lt;div class="row mb-3"&gt;
+                &lt;div class="col-2"&gt;
+                    &lt;label class="col-form-label"&gt;Name&lt;/label&gt;
+                &lt;/div&gt;
+                &lt;div class="col-6"&gt;
+                    &lt;input type='text' name='Name' value='@Model.Name' class="form-control" /&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;div class="row mb-3"&gt;
+                &lt;div class="col-2"&gt;
+                    &lt;label class="col-form-label"&gt;Description&lt;/label&gt;
+                &lt;/div&gt;
+                &lt;div class="col-6"&gt;
+                    &lt;input type='text' name='Description' value='@Model.Description'
+                           class="form-control" /&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;div class="row mb-3"&gt;
+                &lt;div class="col-2"&gt;
+                    &lt;button type='submit' class="btn btn-primary"&gt;Save&lt;/button&gt;
+                    &amp;nbsp;&amp;nbsp;
+                    &lt;a href="/departments" class="btn btn-primary"&gt;Cancel&lt;/a&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/form&gt;
+
+        &lt;!-- Form Delete --&gt;
+        &lt;form method='post' action='/departments/delete/@Model.Id'&gt;
+            &lt;button type='submit' class="btn btn-danger"&gt;Delete&lt;/button&gt;
+        &lt;/form&gt;
+
+    &lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Controller — action Details và Edit</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Details(int id)
+{
+    var department = DepartmentsRepository.GetDepartmentById(id);
+    if (department == null)
+    {
+        return View("Error", new List&lt;string&gt;() { "Department not found." });
+    }
+    return View(department); // truyền Department vào Details.cshtml
+}
+
+[HttpPost]
+public IActionResult Edit(Department department)
+{
+    if (!ModelState.IsValid)
+    {
+        return View("Error", GetErrors());
+    }
+    DepartmentsRepository.UpdateDepartment(department);
+    return RedirectToAction(nameof(Index));
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span>Lưu ý quan trọng: trường <code>&lt;input type='hidden' name='Id' value='@Model.Id' /&gt;</code>
+          là bắt buộc. Khi form POST lên <code>/departments/edit</code>, ASP.NET Core dùng Model Binding để điền vào
+          object <code>Department</code> — nếu không có hidden field, <code>Id</code> sẽ bằng 0 và Update sẽ thất bại.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 15 ============ -->
+    <section class="section" id="s15">
+      <h2><span class="num">15</span> Đáp án 8 — Thêm phòng ban</h2>
+      <p class="subvideo-meta">Bài 15 · <em>Assignment 8 (Answer) – Add Department</em></p>
+
+      <p>Bài cuối của chương: tạo <code>Create.cshtml</code> — form thêm phòng ban mới. Cấu trúc tương tự
+        <code>Details.cshtml</code> nhưng các field bắt đầu trống (model được khởi tạo rỗng từ Controller).</p>
+
+      <h3>Controller — action Create</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+public IActionResult Create()
+{
+    // Truyền Department rỗng để View có model (tránh NullReferenceException)
+    return View(new Department());
+}
+
+[HttpPost]
+public IActionResult Create(Department department)
+{
+    if (!ModelState.IsValid)
+    {
+        return View("Error", GetErrors());
+    }
+    DepartmentsRepository.AddDepartment(department);
+    return RedirectToAction(nameof(Index));
+}</code></pre>
+      </div>
+
+      <h3>Create.cshtml — form thêm mới</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Create.cshtml</span><span class="lang">html</span></div>
+        <pre><code>@using WebApp.Models
+@model Department
+
+&lt;html&gt;
+&lt;head&gt;
+    &lt;link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+          rel="stylesheet"&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;div class="container"&gt;
+        &lt;h3&gt;Add Department&lt;/h3&gt;
+
+        &lt;form method='post' action='/departments/create'&gt;
+
+            &lt;div class="row mb-3"&gt;
+                &lt;div class="col-2"&gt;
+                    &lt;label class="col-form-label"&gt;Name&lt;/label&gt;
+                &lt;/div&gt;
+                &lt;div class="col-6"&gt;
+                    &lt;input type='text' name='Name' value='@Model.Name' class="form-control" /&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;div class="row mb-3"&gt;
+                &lt;div class="col-2"&gt;
+                    &lt;label class="col-form-label"&gt;Description&lt;/label&gt;
+                &lt;/div&gt;
+                &lt;div class="col-6"&gt;
+                    &lt;input type='text' name='Description' value='@Model.Description'
+                           class="form-control" /&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;div class="row mb-3"&gt;
+                &lt;div class="col-2"&gt;
+                    &lt;button type='submit' class="btn btn-primary"&gt;Save&lt;/button&gt;
+                    &amp;nbsp;&amp;nbsp;
+                    &lt;a href="/departments" class="btn btn-primary"&gt;Cancel&lt;/a&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+
+        &lt;/form&gt;
+    &lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Tổng kết cấu trúc Views hoàn chỉnh</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Cây Views sau khi hoàn thành bài tập</span><span class="lang">text</span></div>
+        <pre><code>Views/
+├── Departments/
+│   ├── Index.cshtml      ← Danh sách (model: List&lt;Department&gt;)
+│   ├── Details.cshtml    ← Form Edit + Delete (model: Department)
+│   ├── Create.cshtml     ← Form Add (model: Department rỗng)
+│   └── Error.cshtml      ← Hiển thị lỗi (model: List&lt;string&gt;)
+└── Home/
+    └── Index.cshtml      ← Trang chủ demo Razor syntax</code></pre>
+      </div>
+
+      <h3>Luồng CRUD đầy đủ</h3>
+      <table class="tbl">
+        <tr><th>HTTP Method</th><th>URL</th><th>Action</th><th>View</th></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/departments</code></td><td><code>Index()</code></td><td><code>Index.cshtml</code></td></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/departments/details/{id}</code></td><td><code>Details(id)</code></td><td><code>Details.cshtml</code></td></tr>
+        <tr><td><span class="tag">POST</span></td><td><code>/departments/edit</code></td><td><code>Edit(dept)</code></td><td>Redirect → Index</td></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/departments/create</code></td><td><code>Create()</code></td><td><code>Create.cshtml</code></td></tr>
+        <tr><td><span class="tag">POST</span></td><td><code>/departments/create</code></td><td><code>Create(dept)</code></td><td>Redirect → Index</td></tr>
+        <tr><td><span class="tag">POST</span></td><td><code>/departments/delete/{id}</code></td><td><code>Delete(id)</code></td><td>Redirect → Index</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Kết luận chương:</strong> bạn đã nắm đủ công cụ để xây dựng giao diện MVC
+          thực sự với Razor — từ biểu thức đơn giản đến vòng lặp, điều kiện, truyền model, ViewData/ViewBag, và hoàn
+          thiện CRUD app đầy đủ. Chương tiếp theo sẽ đi sâu vào <strong>Layout View</strong> để tái sử dụng HTML chung
+          (header, footer, navigation) giữa các trang.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-10.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">10 · MVC Controllers — Producing Results</div>
+      </a>
+      <a class="next" href="lesson-12.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">12 · MVC — Layout Views</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

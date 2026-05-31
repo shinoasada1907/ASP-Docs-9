@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 02 — HTTP Protocol &amp; HTTP Context | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 02 — HTTP Protocol &amp; HTTP Context</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Cú pháp HTTP Request</a></li>
+      <li><a href="#s2">2. HTTP Request trong HttpContext</a></li>
+      <li><a href="#s3">3. HTTP Method GET</a></li>
+      <li><a href="#s4">4. HTTP Method POST</a></li>
+      <li><a href="#s5">5. HTTP Method PUT</a></li>
+      <li><a href="#s6">6. Query String</a></li>
+      <li><a href="#s7">7. HTTP Method DELETE</a></li>
+      <li><a href="#s8">8. HTTP Request Headers</a></li>
+      <li><a href="#s9">9. Tái cấu trúc routing code</a></li>
+      <li><a href="#s10">10. Cú pháp HTTP Response</a></li>
+      <li><a href="#s11">11. HTTP Response trong HttpContext</a></li>
+      <li><a href="#s12">12. HTTP Response Status Codes</a></li>
+      <li><a href="#s13">13. Bài tập 1 — Hiển thị nhân viên cụ thể</a></li>
+      <li><a href="#s14">14. Bài tập 1 (Đáp án)</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 02</span>
+      <h1>HTTP Protocol &amp; HTTP Context</h1>
+      <p class="lead">Tìm hiểu sâu về giao thức HTTP — cú pháp request/response, các HTTP method (GET, POST, PUT, DELETE), query string, headers, status codes — và cách ASP.NET Core ánh xạ tất cả vào đối tượng <code>HttpContext</code>.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Cú pháp HTTP Request</h2>
+      <p class="subvideo-meta">Bài 1 · <em>HTTP Request Syntax</em></p>
+
+      <p>Mọi giao tiếp giữa client và server trong ứng dụng web đều bắt đầu bằng một <strong>HTTP Request</strong>. Request này được gửi từ client (trình duyệt, mobile app, Postman…) đến server và mang theo đầy đủ thông tin cần thiết để server biết phải làm gì.</p>
+
+      <h3>Mục đích của HTTP Request</h3>
+      <p>HTTP Request có nhiệm vụ <strong>cung cấp yêu cầu (requirements)</strong> từ client đến server — xác định rõ client muốn làm gì, trên tài nguyên nào, và cung cấp dữ liệu gì kèm theo nếu cần.</p>
+
+      <h3>Cấu trúc một HTTP Request</h3>
+      <p>Một HTTP Request dạng văn bản thuần túy có ba phần:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Request (raw text)</span><span class="lang">http</span></div>
+        <pre><code>GET /employees HTTP/1.1
+Host: localhost:5000
+Accept: application/json
+Authorization: Bearer &lt;token&gt;
+
+(body — thường rỗng với GET)</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Phần</th><th>Vị trí</th><th>Ý nghĩa</th></tr>
+        <tr><td><strong>Request Line</strong></td><td>Dòng đầu tiên</td><td>Gồm: <code>METHOD URL HTTP-VERSION</code> — ví dụ <code>GET /employees HTTP/1.1</code>.</td></tr>
+        <tr><td><strong>Headers</strong></td><td>Từ dòng 2 trở đi</td><td>Các cặp key-value cung cấp thông tin bổ sung (host, content-type, authorization…).</td></tr>
+        <tr><td><strong>Body</strong></td><td>Sau dòng trắng</td><td>Dữ liệu gửi kèm (dùng với POST, PUT). Với GET/DELETE thường để trống.</td></tr>
+      </table>
+
+      <h3>Thành phần Request Line</h3>
+      <ul>
+        <li><strong>Method (động từ):</strong> loại hành động client muốn thực hiện — <code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>…</li>
+        <li><strong>URL (path):</strong> vị trí tài nguyên trên server — ví dụ <code>/employees</code>, <code>/employees?id=1</code>.</li>
+        <li><strong>HTTP Version:</strong> phiên bản giao thức — thường là <code>HTTP/1.1</code> hoặc <code>HTTP/2</code>.</li>
+      </ul>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Kết hợp Method + URL = định danh endpoint.</strong> Đây là cơ sở của routing: server căn cứ vào <em>method</em> và <em>path</em> để biết endpoint nào cần xử lý request.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> HTTP Request trong HttpContext</h2>
+      <p class="subvideo-meta">Bài 2 · <em>HTTP Request in HttpContext</em></p>
+
+      <p>Khi một HTTP request đến, <strong>Kestrel</strong> (web server tích hợp của ASP.NET Core) phân tích chuỗi văn bản HTTP thô và chuyển đổi nó thành đối tượng <strong><code>HttpContext</code></strong>. Đây là bước đầu tiên trong pipeline xử lý request.</p>
+
+      <h3>HttpContext là gì?</h3>
+      <p><code>HttpContext</code> là đối tượng trung tâm bao gồm toàn bộ thông tin về một chu kỳ request/response:</p>
+      <ul>
+        <li><code>context.Request</code> — đối tượng <code>HttpRequest</code> chứa mọi thông tin từ phía client.</li>
+        <li><code>context.Response</code> — đối tượng <code>HttpResponse</code> để xây dựng phản hồi gửi về client.</li>
+        <li><code>context.User</code> — thông tin xác thực người dùng.</li>
+        <li><code>context.Items</code> — dictionary chia sẻ dữ liệu giữa các middleware.</li>
+      </ul>
+
+      <h3>Truy cập thông tin Request qua HttpContext</h3>
+      <p>Trong ví dụ dưới đây, <code>app.Run()</code> đăng ký một terminal middleware nhận <code>HttpContext</code> và đọc các thuộc tính của request:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.Run(async (HttpContext context) =&gt;
+{
+    // Đọc HTTP method (GET, POST, ...)
+    await context.Response.WriteAsync($"Method: {context.Request.Method}\r\n");
+
+    // Đọc đường dẫn URL
+    await context.Response.WriteAsync($"Path: {context.Request.Path}\r\n");
+
+    // Duyệt tất cả headers
+    await context.Response.WriteAsync("\r\nHeaders:\r\n");
+    foreach (var key in context.Request.Headers.Keys)
+    {
+        await context.Response.WriteAsync($"{key}: {context.Request.Headers[key]}\r\n");
+    }
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Thuộc tính</th><th>Kiểu dữ liệu</th><th>Mô tả</th></tr>
+        <tr><td><code>Request.Method</code></td><td><code>string</code></td><td>HTTP method: <code>"GET"</code>, <code>"POST"</code>, <code>"PUT"</code>, <code>"DELETE"</code>…</td></tr>
+        <tr><td><code>Request.Path</code></td><td><code>PathString</code></td><td>Đường dẫn URL, ví dụ <code>/employees</code>.</td></tr>
+        <tr><td><code>Request.QueryString</code></td><td><code>QueryString</code></td><td>Chuỗi query nguyên văn, ví dụ <code>?id=1</code>.</td></tr>
+        <tr><td><code>Request.Query</code></td><td><code>IQueryCollection</code></td><td>Dictionary các tham số query string.</td></tr>
+        <tr><td><code>Request.Headers</code></td><td><code>IHeaderDictionary</code></td><td>Tập hợp các HTTP header.</td></tr>
+        <tr><td><code>Request.Body</code></td><td><code>Stream</code></td><td>Nội dung body của request.</td></tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><code>app.Run(delegate)</code> đăng ký một <strong>terminal middleware</strong> — mọi request đều đi qua đây và không được chuyển tiếp tiếp. Đây là cách tiếp cận thủ công nhất để hiểu cách HttpContext hoạt động trước khi học routing cao cấp hơn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> HTTP Method GET</h2>
+      <p class="subvideo-meta">Bài 3 · <em>HTTP Method GET</em></p>
+
+      <p><strong>GET</strong> là HTTP method phổ biến nhất. Mục đích của nó là <strong>lấy (retrieve) thông tin</strong> từ server — không tạo mới, không sửa, không xóa dữ liệu.</p>
+
+      <h3>Đặc điểm của GET</h3>
+      <ul>
+        <li>Không có body (hoặc body bị bỏ qua).</li>
+        <li>Tham số được truyền qua URL (path hoặc query string).</li>
+        <li>An toàn và idempotent — gọi nhiều lần cho cùng một kết quả.</li>
+        <li>Có thể được cache bởi trình duyệt và proxy.</li>
+      </ul>
+
+      <h3>Routing thủ công với method + path</h3>
+      <p>Trong giai đoạn này của khóa học, routing được thực hiện thủ công bằng cách kiểm tra <code>context.Request.Method</code> và <code>context.Request.Path</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.Run(async (HttpContext context) =&gt;
+{
+    if (context.Request.Method == "GET")
+    {
+        if (context.Request.Path.StartsWithSegments("/"))
+        {
+            await context.Response.WriteAsync("Trang chủ — GET /\r\n");
+        }
+        else if (context.Request.Path.StartsWithSegments("/employees"))
+        {
+            // Trả về danh sách tất cả nhân viên
+            var employees = EmployeesRepository.GetEmployees();
+            foreach (var emp in employees)
+            {
+                await context.Response.WriteAsync($"{emp.Name}: {emp.Position}\r\n");
+            }
+        }
+    }
+});
+
+app.Run();
+
+// --- Repository ---
+static class EmployeesRepository
+{
+    private static List&lt;Employee&gt; employees = new()
+    {
+        new Employee(1, "John Doe",   "Engineer",   60000),
+        new Employee(2, "Jane Smith", "Manager",    75000),
+        new Employee(3, "Sam Brown",  "Technician", 50000)
+    };
+
+    public static List&lt;Employee&gt; GetEmployees() =&gt; employees;
+}
+
+public class Employee
+{
+    public int    Id       { get; set; }
+    public string Name     { get; set; }
+    public string Position { get; set; }
+    public double Salary   { get; set; }
+
+    public Employee(int id, string name, string position, double salary)
+    {
+        Id = id; Name = name; Position = position; Salary = salary;
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><code>Path.StartsWithSegments("/employees")</code> so sánh chính xác theo segment — <code>/employees</code> khớp, nhưng <code>/employees-old</code> thì không. Đây là cách an toàn hơn so với <code>Path.Value.StartsWith("/employees")</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> HTTP Method POST</h2>
+      <p class="subvideo-meta">Bài 4 · <em>HTTP Method POST</em></p>
+
+      <p><strong>POST</strong> được dùng để <strong>tạo mới tài nguyên</strong> trên server. Dữ liệu cần tạo mới được client gửi kèm trong <strong>body</strong> của request, thường ở định dạng JSON.</p>
+
+      <h3>Đặc điểm của POST</h3>
+      <ul>
+        <li>Có body chứa dữ liệu tạo mới (JSON, form-data, XML…).</li>
+        <li>Không idempotent — gọi nhiều lần sẽ tạo nhiều bản ghi.</li>
+        <li>Phản hồi thành công thường trả về status code <code>201 Created</code>.</li>
+      </ul>
+
+      <h3>Đọc body JSON từ Request</h3>
+      <p><code>context.Request.Body</code> là một <code>Stream</code>, cần đọc bằng <code>StreamReader</code> rồi deserialize:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — xử lý POST /employees</span><span class="lang">csharp</span></div>
+        <pre><code>else if (context.Request.Method == "POST")
+{
+    if (context.Request.Path.StartsWithSegments("/employees"))
+    {
+        // Đọc body dưới dạng chuỗi
+        using var reader = new StreamReader(context.Request.Body);
+        var body = await reader.ReadToEndAsync();
+
+        // Deserialize JSON thành đối tượng Employee
+        var employee = JsonSerializer.Deserialize&lt;Employee&gt;(body);
+
+        EmployeesRepository.AddEmployee(employee);
+
+        context.Response.StatusCode = 201; // Created
+        await context.Response.WriteAsync("Employee added successfully.");
+    }
+}</code></pre>
+      </div>
+
+      <h3>Gọi POST bằng Postman / curl</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal (curl)</span><span class="lang">bash</span></div>
+        <pre><code>curl -X POST http://localhost:5000/employees \
+     -H "Content-Type: application/json" \
+     -d '{"id":4,"name":"Alice","position":"Designer","salary":65000}'</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><code>JsonSerializer.Deserialize&lt;T&gt;</code> mặc định phân biệt chữ hoa/thường với tên property. Nếu JSON gửi lên là <code>"name"</code> nhưng property C# là <code>Name</code>, cần thêm option <code>JsonSerializerOptions { PropertyNameCaseInsensitive = true }</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> HTTP Method PUT</h2>
+      <p class="subvideo-meta">Bài 5 · <em>HTTP Method PUT</em></p>
+
+      <p><strong>PUT</strong> được dùng để <strong>cập nhật toàn bộ tài nguyên</strong> đã tồn tại trên server. Giống POST, dữ liệu cập nhật được gửi trong body của request.</p>
+
+      <h3>GET vs POST vs PUT — so sánh</h3>
+      <table class="tbl">
+        <tr><th>Method</th><th>Mục đích</th><th>Body?</th><th>Idempotent?</th></tr>
+        <tr><td><code>GET</code></td><td>Lấy dữ liệu</td><td>Không</td><td>Có</td></tr>
+        <tr><td><code>POST</code></td><td>Tạo mới tài nguyên</td><td>Có</td><td>Không</td></tr>
+        <tr><td><code>PUT</code></td><td>Cập nhật toàn bộ tài nguyên</td><td>Có</td><td>Có</td></tr>
+      </table>
+
+      <h3>Xử lý PUT — cập nhật nhân viên</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — xử lý PUT /employees</span><span class="lang">csharp</span></div>
+        <pre><code>else if (context.Request.Method == "PUT")
+{
+    if (context.Request.Path.StartsWithSegments("/employees"))
+    {
+        using var reader = new StreamReader(context.Request.Body);
+        var body = await reader.ReadToEndAsync();
+        var employee = JsonSerializer.Deserialize&lt;Employee&gt;(body);
+
+        var result = EmployeesRepository.UpdateEmployee(employee);
+        if (result)
+        {
+            await context.Response.WriteAsync("Employee updated successfully.");
+        }
+        else
+        {
+            await context.Response.WriteAsync("Employee not found.");
+        }
+    }
+}
+
+// --- Thêm phương thức UpdateEmployee vào repository ---
+public static bool UpdateEmployee(Employee? employee)
+{
+    if (employee is not null)
+    {
+        var emp = employees.FirstOrDefault(x =&gt; x.Id == employee.Id);
+        if (emp is not null)
+        {
+            emp.Name     = employee.Name;
+            emp.Position = employee.Position;
+            emp.Salary   = employee.Salary;
+            return true;
+        }
+    }
+    return false;
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Trong thực tế, cũng có <strong>PATCH</strong> để cập nhật một phần tài nguyên (chỉ cập nhật những trường được gửi). PUT thay thế toàn bộ, còn PATCH chỉ thay thế một phần.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Query String</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Query String</em></p>
+
+      <p><strong>Query string</strong> là phần của URL nằm sau dấu <code>?</code>, chứa các cặp key-value để truyền tham số bổ sung đến server mà không cần thay đổi path.</p>
+
+      <h3>Cú pháp query string</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">URL ví dụ</span><span class="lang">http</span></div>
+        <pre><code>GET /employees?id=1 HTTP/1.1
+GET /employees?search=john&amp;page=2&amp;pageSize=10 HTTP/1.1</code></pre>
+      </div>
+
+      <ul>
+        <li>Bắt đầu bằng dấu <code>?</code> sau phần path.</li>
+        <li>Mỗi tham số là cặp <code>key=value</code>.</li>
+        <li>Nhiều tham số cách nhau bằng dấu <code>&amp;</code>.</li>
+      </ul>
+
+      <h3>Đọc query string trong ASP.NET Core</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — đọc query string</span><span class="lang">csharp</span></div>
+        <pre><code>// Kiểm tra xem query string có chứa key "id" không
+if (context.Request.Query.ContainsKey("id"))
+{
+    var idStr = context.Request.Query["id"];          // trả về StringValues
+    if (int.TryParse(idStr, out int employeeId))
+    {
+        await context.Response.WriteAsync($"Employee ID requested: {employeeId}");
+    }
+}
+
+// Lấy tham số search (nếu không tồn tại, trả về StringValues.Empty)
+var search = context.Request.Query["search"].ToString();</code></pre>
+      </div>
+
+      <h3>Ứng dụng thực tế</h3>
+      <p>Query string thường được dùng để:</p>
+      <ul>
+        <li>Truyền ID để lấy/xóa tài nguyên cụ thể: <code>GET /employees?id=1</code>, <code>DELETE /employees?id=1</code>.</li>
+        <li>Tìm kiếm và lọc: <code>GET /employees?search=john&amp;department=IT</code>.</li>
+        <li>Phân trang: <code>GET /employees?page=2&amp;pageSize=10</code>.</li>
+        <li>Sắp xếp: <code>GET /employees?sortBy=salary&amp;order=desc</code>.</li>
+      </ul>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><code>context.Request.Query["id"]</code> trả về kiểu <code>StringValues</code> (có thể chứa nhiều giá trị cho cùng key). Luôn dùng <code>int.TryParse()</code> hoặc <code>ToString()</code> trước khi sử dụng để tránh lỗi.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> HTTP Method DELETE</h2>
+      <p class="subvideo-meta">Bài 7 · <em>HTTP Method DELETE</em></p>
+
+      <p><strong>DELETE</strong> được dùng để <strong>xóa tài nguyên</strong> trên server. Vì cần biết xóa tài nguyên nào, thông tin định danh (thường là ID) được truyền qua query string hoặc URL path.</p>
+
+      <h3>Tại sao cần query string với DELETE?</h3>
+      <p>Nếu chỉ dùng <code>DELETE /employees</code>, server không biết xóa nhân viên nào. Cần truyền ID:</p>
+      <ul>
+        <li><code>DELETE /employees?id=3</code> — qua query string (cách dùng trong bài này).</li>
+        <li><code>DELETE /employees/3</code> — qua URL path (route parameter, dùng khi học Minimal API/MVC).</li>
+      </ul>
+
+      <h3>Xử lý DELETE với query string</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — xử lý DELETE /employees?id=N</span><span class="lang">csharp</span></div>
+        <pre><code>else if (context.Request.Method == "DELETE")
+{
+    if (context.Request.Path.StartsWithSegments("/employees"))
+    {
+        if (context.Request.Query.ContainsKey("id"))
+        {
+            var id = context.Request.Query["id"];
+            if (int.TryParse(id, out int employeeId))
+            {
+                var result = EmployeesRepository.DeleteEmployee(employeeId);
+
+                if (result)
+                {
+                    await context.Response.WriteAsync("Employee deleted successfully.");
+                }
+                else
+                {
+                    await context.Response.WriteAsync("Employee not found.");
+                }
+            }
+        }
+    }
+}
+
+// --- Thêm DeleteEmployee vào repository ---
+public static bool DeleteEmployee(int id)
+{
+    var employee = employees.FirstOrDefault(x =&gt; x.Id == id);
+    if (employee is not null)
+    {
+        employees.Remove(employee);
+        return true;
+    }
+    return false;
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Thao tác DELETE là <strong>idempotent</strong> theo chuẩn HTTP — gọi lần đầu xóa, gọi lần sau trả về 404 (nhưng server state không thay đổi thêm). Tuy nhiên không nên dùng GET để xóa dữ liệu vì GET không được phép có side effect.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> HTTP Request Headers</h2>
+      <p class="subvideo-meta">Bài 8 · <em>HTTP Request Headers</em></p>
+
+      <p><strong>HTTP Request Headers</strong> cung cấp thông tin bổ sung từ client đến server, giúp server xử lý request đúng cách. Headers được gửi dưới dạng các cặp key-value nằm sau request line.</p>
+
+      <h3>Tại sao cần headers?</h3>
+      <ul>
+        <li><strong>URL có giới hạn độ dài</strong> — không thể nhét tất cả thông tin vào URL.</li>
+        <li><strong>Thông tin nhạy cảm</strong> — không nên đặt token xác thực lên URL (sẽ bị ghi vào log, lịch sử trình duyệt…).</li>
+        <li><strong>Metadata kỹ thuật</strong> — content-type, encoding, ngôn ngữ mong muốn… không phải là dữ liệu nghiệp vụ.</li>
+      </ul>
+
+      <h3>Các header phổ biến</h3>
+      <table class="tbl">
+        <tr><th>Header</th><th>Ví dụ giá trị</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>Host</code></td><td><code>localhost:5000</code></td><td>Domain đích của request.</td></tr>
+        <tr><td><code>Content-Type</code></td><td><code>application/json</code></td><td>Định dạng của body request.</td></tr>
+        <tr><td><code>Accept</code></td><td><code>application/json</code></td><td>Định dạng response mà client chấp nhận.</td></tr>
+        <tr><td><code>Authorization</code></td><td><code>Bearer &lt;token&gt;</code></td><td>Thông tin xác thực (token, API key…).</td></tr>
+        <tr><td><code>User-Agent</code></td><td><code>Mozilla/5.0 …</code></td><td>Thông tin về trình duyệt/client.</td></tr>
+        <tr><td><code>Cookie</code></td><td><code>sessionId=abc123</code></td><td>Cookie gửi kèm.</td></tr>
+      </table>
+
+      <h3>Đọc và sử dụng headers trong ASP.NET Core</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — kiểm tra header Authorization</span><span class="lang">csharp</span></div>
+        <pre><code>else if (context.Request.Method == "DELETE")
+{
+    if (context.Request.Path.StartsWithSegments("/employees"))
+    {
+        if (context.Request.Query.ContainsKey("id"))
+        {
+            var id = context.Request.Query["id"];
+            if (int.TryParse(id, out int employeeId))
+            {
+                // Kiểm tra header Authorization
+                if (context.Request.Headers["Authorization"] == "frank")
+                {
+                    var result = EmployeesRepository.DeleteEmployee(employeeId);
+                    if (result)
+                        await context.Response.WriteAsync("Employee deleted successfully.");
+                    else
+                        await context.Response.WriteAsync("Employee not found.");
+                }
+                else
+                {
+                    await context.Response.WriteAsync("You are not authorized to delete.");
+                }
+            }
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Đây là ví dụ minh họa đơn giản. Trong production, authorization phải dùng <strong>JWT / Cookie Authentication</strong> của ASP.NET Core — không so sánh header thủ công như vậy.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Tái cấu trúc routing code</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Refactor our routing code</em></p>
+
+      <p>Trong các bài trước, code routing kiểm tra <strong>method trước, path sau</strong>. Nhưng routing chuẩn trong thực tế hoạt động theo thứ tự <strong>path trước, method sau</strong> — tức là xác định tài nguyên trước, rồi mới xác định hành động cần thực hiện trên tài nguyên đó.</p>
+
+      <h3>Tại sao phải đổi thứ tự?</h3>
+      <p>Hãy tưởng tượng ứng dụng có nhiều endpoint:</p>
+      <ul>
+        <li><code>GET /employees</code> — lấy danh sách nhân viên</li>
+        <li><code>POST /employees</code> — thêm nhân viên</li>
+        <li><code>GET /positions</code> — lấy danh sách chức vụ</li>
+      </ul>
+      <p>Routing đúng: <em>xác định request đi đến <code>/employees</code> hay <code>/positions</code> trước, rồi xét method để chọn handler cụ thể.</em></p>
+
+      <h3>Code sau khi refactor</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — routing theo path rồi method</span><span class="lang">csharp</span></div>
+        <pre><code>app.Run(async (HttpContext context) =&gt;
+{
+    if (context.Request.Path.StartsWithSegments("/"))
+    {
+        // Trang chủ — hiển thị thông tin request
+        await context.Response.WriteAsync($"Method: {context.Request.Method}\r\n");
+        await context.Response.WriteAsync($"Path:   {context.Request.Path}\r\n");
+    }
+    else if (context.Request.Path.StartsWithSegments("/employees"))
+    {
+        // --- Branch theo method ---
+        if (context.Request.Method == "GET")
+        {
+            var employees = EmployeesRepository.GetEmployees();
+            foreach (var emp in employees)
+                await context.Response.WriteAsync($"{emp.Name}: {emp.Position}\r\n");
+        }
+        else if (context.Request.Method == "POST")
+        {
+            using var reader = new StreamReader(context.Request.Body);
+            var body = await reader.ReadToEndAsync();
+            var employee = JsonSerializer.Deserialize&lt;Employee&gt;(body);
+            EmployeesRepository.AddEmployee(employee);
+        }
+        else if (context.Request.Method == "PUT")
+        {
+            using var reader = new StreamReader(context.Request.Body);
+            var body = await reader.ReadToEndAsync();
+            var employee = JsonSerializer.Deserialize&lt;Employee&gt;(body);
+            var result = EmployeesRepository.UpdateEmployee(employee);
+            await context.Response.WriteAsync(result ? "Updated." : "Not found.");
+        }
+        else if (context.Request.Method == "DELETE")
+        {
+            if (context.Request.Query.ContainsKey("id") &amp;&amp;
+                int.TryParse(context.Request.Query["id"], out int id))
+            {
+                if (context.Request.Headers["Authorization"] == "frank")
+                {
+                    var result = EmployeesRepository.DeleteEmployee(id);
+                    await context.Response.WriteAsync(result ? "Deleted." : "Not found.");
+                }
+                else
+                {
+                    await context.Response.WriteAsync("Unauthorized.");
+                }
+            }
+        }
+    }
+});</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span>Đây chính là mô hình tư duy mà <strong>Minimal API và MVC routing</strong> sử dụng: <code>MapGet("/employees", handler)</code>, <code>MapPost("/employees", handler)</code>… — ASP.NET Core routing framework đã tự động hóa chính xác logic path-first, method-second này.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Cú pháp HTTP Response</h2>
+      <p class="subvideo-meta">Bài 10 · <em>HTTP Response Syntax</em></p>
+
+      <p>Sau khi xử lý request, server gửi lại một <strong>HTTP Response</strong> cho client. Response có mục đích ngược lại với request: <strong>cung cấp thông tin từ server đến client</strong> để client (trình duyệt) có thể hiển thị hay xử lý dữ liệu nhận được.</p>
+
+      <h3>Cấu trúc HTTP Response</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Response (raw text)</span><span class="lang">http</span></div>
+        <pre><code>HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Content-Length: 42
+
+&lt;ul&gt;&lt;li&gt;John Doe: Engineer&lt;/li&gt;&lt;/ul&gt;</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Phần</th><th>Vị trí</th><th>Ý nghĩa</th></tr>
+        <tr><td><strong>Status Line</strong></td><td>Dòng đầu tiên</td><td>Gồm: <code>HTTP-VERSION STATUS-CODE REASON-PHRASE</code>, ví dụ <code>HTTP/1.1 200 OK</code>.</td></tr>
+        <tr><td><strong>Response Headers</strong></td><td>Từ dòng 2</td><td>Metadata về response: content-type, content-length, cache-control, set-cookie…</td></tr>
+        <tr><td><strong>Body</strong></td><td>Sau dòng trắng</td><td>Nội dung thực tế: HTML, JSON, hình ảnh, file… Có thể rỗng (ví dụ 204 No Content).</td></tr>
+      </table>
+
+      <h3>Status Line — ba thành phần</h3>
+      <ul>
+        <li><strong>HTTP Version:</strong> <code>HTTP/1.1</code> hoặc <code>HTTP/2</code>.</li>
+        <li><strong>Status Code:</strong> số nguyên 3 chữ số — ví dụ <code>200</code>, <code>404</code>, <code>500</code>.</li>
+        <li><strong>Reason Phrase:</strong> mô tả ngắn bằng tiếng Anh — <code>OK</code>, <code>Not Found</code>, <code>Internal Server Error</code>.</li>
+      </ul>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Trình duyệt đọc <code>Content-Type</code> header để biết cách render body. Nếu là <code>text/html</code>, trình duyệt render HTML. Nếu là <code>application/json</code>, trình duyệt hiển thị JSON thô.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 11 ============ -->
+    <section class="section" id="s11">
+      <h2><span class="num">11</span> HTTP Response trong HttpContext</h2>
+      <p class="subvideo-meta">Bài 11 · <em>HTTP Response in HttpContext</em></p>
+
+      <p>Đối tượng <code>context.Response</code> (kiểu <code>HttpResponse</code>) là nơi ta xây dựng HTTP response sẽ gửi về client. ASP.NET Core tự động chuyển đổi các thiết lập trên đối tượng này thành chuỗi HTTP response hợp lệ.</p>
+
+      <h3>Các thuộc tính quan trọng của HttpResponse</h3>
+      <table class="tbl">
+        <tr><th>Thuộc tính / Phương thức</th><th>Kiểu</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>Response.StatusCode</code></td><td><code>int</code></td><td>HTTP status code trả về, ví dụ <code>200</code>, <code>201</code>, <code>404</code>.</td></tr>
+        <tr><td><code>Response.Headers</code></td><td><code>IHeaderDictionary</code></td><td>Response headers — thiết lập Content-Type, Cache-Control…</td></tr>
+        <tr><td><code>Response.ContentType</code></td><td><code>string?</code></td><td>Shortcut cho header <code>Content-Type</code>.</td></tr>
+        <tr><td><code>Response.Body</code></td><td><code>Stream</code></td><td>Stream để ghi nội dung body.</td></tr>
+        <tr><td><code>Response.WriteAsync()</code></td><td><code>Task</code></td><td>Ghi chuỗi vào body response.</td></tr>
+        <tr><td><code>Response.Redirect()</code></td><td><code>void</code></td><td>Chuyển hướng client đến URL khác (trả về 302).</td></tr>
+      </table>
+
+      <h3>Thiết lập Content-Type và ghi body HTML</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — response HTML với status code</span><span class="lang">csharp</span></div>
+        <pre><code>if (context.Request.Method == "GET")
+{
+    var employees = EmployeesRepository.GetEmployees();
+
+    // Thiết lập Content-Type để trình duyệt render HTML
+    context.Response.Headers["Content-Type"] = "text/html";
+    // hoặc: context.Response.ContentType = "text/html";
+
+    await context.Response.WriteAsync("&lt;ul&gt;");
+    foreach (var emp in employees)
+    {
+        await context.Response.WriteAsync(
+            $"&lt;li&gt;&lt;b&gt;{emp.Name}&lt;/b&gt;: {emp.Position}&lt;/li&gt;");
+    }
+    await context.Response.WriteAsync("&lt;/ul&gt;");
+
+    context.Response.StatusCode = 200; // OK
+}
+else if (context.Request.Method == "POST")
+{
+    // ... thêm nhân viên ...
+    context.Response.StatusCode = 201; // Created
+    await context.Response.WriteAsync("Employee added successfully.");
+}</code></pre>
+      </div>
+
+      <h3>Chuyển hướng (Redirect)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — redirect</span><span class="lang">csharp</span></div>
+        <pre><code>else if (context.Request.Path.StartsWithSegments("/redirection"))
+{
+    // Trả về 302 Found, client tự động chuyển đến /employees
+    context.Response.Redirect("/employees");
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Phải thiết lập <code>StatusCode</code> và <code>Headers</code> <strong>trước</strong> khi gọi <code>WriteAsync()</code> lần đầu, vì sau đó headers đã được gửi và không thể sửa đổi nữa.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 12 ============ -->
+    <section class="section" id="s12">
+      <h2><span class="num">12</span> HTTP Response Status Codes</h2>
+      <p class="subvideo-meta">Bài 12 · <em>HTTP Response Status Codes</em></p>
+
+      <p><strong>Status code</strong> là con số 3 chữ số trong response, cho client biết kết quả xử lý request. Có 5 nhóm status code:</p>
+
+      <table class="tbl">
+        <tr><th>Nhóm</th><th>Phạm vi</th><th>Ý nghĩa</th></tr>
+        <tr><td><span class="tag">1xx</span></td><td>100–199</td><td>Informational — thông tin, hiếm dùng trực tiếp.</td></tr>
+        <tr><td><span class="tag">2xx</span></td><td>200–299</td><td>Success — request thành công.</td></tr>
+        <tr><td><span class="tag">3xx</span></td><td>300–399</td><td>Redirection — client cần thực hiện thêm hành động.</td></tr>
+        <tr><td><span class="tag">4xx</span></td><td>400–499</td><td>Client Error — lỗi từ phía client.</td></tr>
+        <tr><td><span class="tag">5xx</span></td><td>500–599</td><td>Server Error — lỗi từ phía server.</td></tr>
+      </table>
+
+      <h3>Các status code thường dùng</h3>
+      <table class="tbl">
+        <tr><th>Code</th><th>Tên</th><th>Khi nào dùng</th></tr>
+        <tr><td><code>200</code></td><td>OK</td><td>Request thành công, có body trả về (GET, PUT thành công…).</td></tr>
+        <tr><td><code>201</code></td><td>Created</td><td>Tạo mới tài nguyên thành công (POST).</td></tr>
+        <tr><td><code>204</code></td><td>No Content</td><td>Thành công nhưng không có body trả về (PUT/DELETE thành công).</td></tr>
+        <tr><td><code>302</code></td><td>Found</td><td>Redirect tạm thời.</td></tr>
+        <tr><td><code>400</code></td><td>Bad Request</td><td>Dữ liệu client gửi không hợp lệ.</td></tr>
+        <tr><td><code>401</code></td><td>Unauthorized</td><td>Chưa xác thực hoặc xác thực sai.</td></tr>
+        <tr><td><code>403</code></td><td>Forbidden</td><td>Đã xác thực nhưng không có quyền.</td></tr>
+        <tr><td><code>404</code></td><td>Not Found</td><td>Tài nguyên hoặc endpoint không tồn tại.</td></tr>
+        <tr><td><code>500</code></td><td>Internal Server Error</td><td>Lỗi không xác định phía server.</td></tr>
+      </table>
+
+      <h3>Áp dụng đúng status code trong code</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — status code theo tình huống</span><span class="lang">csharp</span></div>
+        <pre><code>// POST — validate và trả về 400 nếu dữ liệu sai
+else if (context.Request.Method == "POST")
+{
+    try
+    {
+        var employee = JsonSerializer.Deserialize&lt;Employee&gt;(body);
+        if (employee is null || employee.Id &lt;= 0)
+        {
+            context.Response.StatusCode = 400; // Bad Request
+            return;
+        }
+        EmployeesRepository.AddEmployee(employee);
+        context.Response.StatusCode = 201; // Created
+        await context.Response.WriteAsync("Employee added successfully.");
+    }
+    catch (Exception ex)
+    {
+        context.Response.StatusCode = 400;
+        await context.Response.WriteAsync(ex.Message);
+    }
+}
+
+// DELETE — 401 nếu không có quyền, 404 nếu không tìm thấy
+else if (context.Request.Method == "DELETE")
+{
+    if (context.Request.Headers["Authorization"] != "frank")
+    {
+        context.Response.StatusCode = 401; // Unauthorized
+        await context.Response.WriteAsync("Unauthorized.");
+        return;
+    }
+    // ... tìm và xóa nhân viên ...
+    if (!result)
+    {
+        context.Response.StatusCode = 404; // Not Found
+        await context.Response.WriteAsync("Employee not found.");
+    }
+}
+
+// Bắt tất cả path không tồn tại — 404
+else
+{
+    context.Response.StatusCode = 404;
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span>Dùng đúng status code là một phần của thiết kế API tốt. Client (và developer khác) dựa vào status code để biết kết quả mà không cần parse body — ví dụ: <code>201</code> chắc chắn nghĩa là tạo thành công, <code>401</code> nghĩa là cần đăng nhập lại.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 13 ============ -->
+    <section class="section" id="s13">
+      <h2><span class="num">13</span> Bài tập 1 — Hiển thị nhân viên cụ thể</h2>
+      <p class="subvideo-meta">Bài 13 · <em>Assignment 1 — Display a particular employee</em></p>
+
+      <p>Bài tập này yêu cầu bạn mở rộng ứng dụng hiện tại để xử lý thêm một trường hợp mới trong <code>GET /employees</code>: ngoài việc liệt kê <em>tất cả</em> nhân viên, còn hỗ trợ lấy thông tin <em>một nhân viên cụ thể</em> theo ID truyền qua query string.</p>
+
+      <h3>Yêu cầu</h3>
+      <ul>
+        <li><code>GET /employees</code> → trả về danh sách tất cả nhân viên (đã có).</li>
+        <li><code>GET /employees?id=1</code> → trả về thông tin chi tiết của nhân viên có ID = 1.</li>
+        <li>Nếu không tìm thấy nhân viên → trả về <code>404 Not Found</code>.</li>
+      </ul>
+
+      <h3>Gợi ý</h3>
+      <ol class="steps">
+        <li>Bên trong branch <code>GET /employees</code>, kiểm tra xem query string có key <code>"id"</code> không.</li>
+        <li>Nếu có → lấy employee theo ID và hiển thị chi tiết.</li>
+        <li>Nếu không có → hiển thị danh sách như cũ.</li>
+        <li>Thêm phương thức <code>GetEmployeeById(int id)</code> vào repository.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Hãy tự viết code trước khi xem đáp án ở bài 14. Đây là cơ hội tốt để luyện tập đọc/ghi <code>HttpContext</code> và xử lý query string.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 14 ============ -->
+    <section class="section" id="s14">
+      <h2><span class="num">14</span> Bài tập 1 (Đáp án)</h2>
+      <p class="subvideo-meta">Bài 14 · <em>Assignment 1 (Answer) — Display a particular employee</em></p>
+
+      <p>Đây là đáp án hoàn chỉnh cho bài tập 1. Điểm mấu chốt là kiểm tra sự tồn tại của query string <code>id</code> bên trong branch <code>GET /employees</code> để phân nhánh giữa "lấy tất cả" và "lấy theo ID".</p>
+
+      <h3>Thêm GetEmployeeById vào repository</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — thêm phương thức GetEmployeeById</span><span class="lang">csharp</span></div>
+        <pre><code>static class EmployeesRepository
+{
+    private static List&lt;Employee&gt; employees = new()
+    {
+        new Employee(1, "John Doe",   "Engineer",   60000),
+        new Employee(2, "Jane Smith", "Manager",    75000),
+        new Employee(3, "Sam Brown",  "Technician", 50000)
+    };
+
+    public static List&lt;Employee&gt; GetEmployees() =&gt; employees;
+
+    // Phương thức mới: lấy nhân viên theo ID
+    public static Employee? GetEmployeeById(int id)
+        =&gt; employees.FirstOrDefault(x =&gt; x.Id == id);
+
+    public static void AddEmployee(Employee? employee)
+    {
+        if (employee is not null) employees.Add(employee);
+    }
+
+    public static bool UpdateEmployee(Employee? employee)
+    {
+        if (employee is not null)
+        {
+            var emp = employees.FirstOrDefault(x =&gt; x.Id == employee.Id);
+            if (emp is not null)
+            {
+                emp.Name = employee.Name; emp.Position = employee.Position;
+                emp.Salary = employee.Salary;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static bool DeleteEmployee(int id)
+    {
+        var emp = employees.FirstOrDefault(x =&gt; x.Id == id);
+        if (emp is not null) { employees.Remove(emp); return true; }
+        return false;
+    }
+}</code></pre>
+      </div>
+
+      <h3>Cập nhật handler GET /employees</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — GET phân nhánh theo query string id</span><span class="lang">csharp</span></div>
+        <pre><code>if (context.Request.Method == "GET")
+{
+    context.Response.ContentType = "text/html";
+
+    if (context.Request.Query.ContainsKey("id"))
+    {
+        // --- Lấy nhân viên cụ thể theo ID ---
+        var idStr = context.Request.Query["id"];
+        if (int.TryParse(idStr, out int employeeId))
+        {
+            var employee = EmployeesRepository.GetEmployeeById(employeeId);
+            if (employee is not null)
+            {
+                await context.Response.WriteAsync($"Name: {employee.Name}&lt;br/&gt;");
+                await context.Response.WriteAsync($"Position: {employee.Position}&lt;br/&gt;");
+                await context.Response.WriteAsync($"Salary: {employee.Salary}&lt;br/&gt;");
+            }
+            else
+            {
+                context.Response.StatusCode = 404;
+                await context.Response.WriteAsync("Employee not found.");
+            }
+        }
+    }
+    else
+    {
+        // --- Lấy tất cả nhân viên ---
+        var employees = EmployeesRepository.GetEmployees();
+        await context.Response.WriteAsync("&lt;ul&gt;");
+        foreach (var emp in employees)
+        {
+            await context.Response.WriteAsync(
+                $"&lt;li&gt;&lt;b&gt;{emp.Name}&lt;/b&gt;: {emp.Position}&lt;/li&gt;");
+        }
+        await context.Response.WriteAsync("&lt;/ul&gt;");
+        context.Response.StatusCode = 200;
+    }
+}</code></pre>
+      </div>
+
+      <h3>Kiểm tra kết quả</h3>
+      <ol class="steps">
+        <li>Chạy <code>dotnet run</code>.</li>
+        <li>Mở trình duyệt, truy cập <code>http://localhost:5000/employees</code> → thấy danh sách 3 nhân viên.</li>
+        <li>Truy cập <code>http://localhost:5000/employees?id=2</code> → thấy thông tin Jane Smith.</li>
+        <li>Truy cập <code>http://localhost:5000/employees?id=99</code> → thấy lỗi <code>Employee not found.</code> với status 404.</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Tổng kết chương:</strong> Bạn đã xây dựng thủ công một mini-API hoàn chỉnh với đầy đủ CRUD qua <code>HttpContext</code>, hiểu rõ cấu trúc HTTP request/response, method, query string, headers và status codes. Chương tiếp theo sẽ học cách <strong>middleware pipeline</strong> tự động hóa và mở rộng các tính năng này.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-01.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">01 · Introduction</div>
+      </a>
+      <a class="next" href="lesson-03.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">03 · Middleware Pipeline</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

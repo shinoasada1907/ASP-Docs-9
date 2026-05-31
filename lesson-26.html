@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 26 — Logging trong ASP.NET Core | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 26 — Logging trong ASP.NET Core</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Logging hoạt động như thế nào</a></li>
+      <li><a href="#s2">2. Các thành phần của một log</a></li>
+      <li><a href="#s3">3. Ghi log với các provider mặc định</a></li>
+      <li><a href="#s4">4. Tự ghi log của riêng bạn</a></li>
+      <li><a href="#s5">5. Cơ bản về Serilog</a></li>
+      <li><a href="#s6">6. Dùng Serilog như built-in logger</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 26</span>
+      <h1>Logging trong ASP.NET Core</h1>
+      <p class="lead">Tìm hiểu hệ thống logging tích hợp sẵn trong ASP.NET Core — cách hoạt động, các thành phần của một log entry, log providers mặc định, cách tự ghi log với <code>ILogger&lt;T&gt;</code>, và cách tích hợp Serilog với sink Console/File.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Logging hoạt động như thế nào</h2>
+      <p class="subvideo-meta">Bài 1 · <em>How Logging Works in ASP.NET Core</em></p>
+
+      <p>ASP.NET Core có hệ thống logging <strong>tích hợp sẵn</strong> (built-in), không cần cài thêm package nào để bắt đầu. Hiểu cơ chế hoạt động của nó giúp bạn sử dụng và mở rộng một cách chính xác.</p>
+
+      <h3>Ba thành phần cốt lõi</h3>
+      <p>Hệ thống logging trong ASP.NET Core xoay quanh ba thành phần chính:</p>
+
+      <table class="tbl">
+        <tr><th>Thành phần</th><th>Vai trò</th></tr>
+        <tr>
+          <td><code>ILogger</code> / <code>ILogger&lt;T&gt;</code></td>
+          <td>Interface mà code ứng dụng gọi để ghi log. Mỗi logger được tạo ra cho một <em>category</em> (thường là tên class đầy đủ).</td>
+        </tr>
+        <tr>
+          <td><code>ILoggerFactory</code></td>
+          <td>Factory trung tâm, tạo ra các instance <code>ILogger</code> và phân phối log message đến tất cả các provider đã đăng ký.</td>
+        </tr>
+        <tr>
+          <td><code>ILoggerProvider</code></td>
+          <td>Mỗi provider biết cách ghi log đến một <em>đích cụ thể</em>: console, file, debug output, event log, database… Có thể có nhiều provider đồng thời.</td>
+        </tr>
+      </table>
+
+      <h3>Luồng hoạt động</h3>
+      <ol class="steps">
+        <li>Khi ứng dụng khởi động, <code>WebApplication.CreateBuilder(args)</code> tự động đăng ký <code>ILoggerFactory</code> và các provider mặc định vào DI container.</li>
+        <li>Class cần ghi log khai báo dependency <code>ILogger&lt;TClass&gt;</code> trong constructor. DI framework tạo logger với category = <code>TClass</code>.</li>
+        <li>Khi gọi <code>logger.LogInformation(...)</code>, <code>ILoggerFactory</code> gọi <strong>tất cả các provider</strong> đã đăng ký — mỗi provider có logger riêng của nó ghi ra đích tương ứng.</li>
+        <li>Mỗi provider lọc log theo <strong>log level</strong> được cấu hình — chỉ ghi những message đạt ngưỡng severity tối thiểu.</li>
+      </ol>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// ILoggerFactory + providers được đăng ký tự động.
+// Có thể tuỳ chỉnh nếu cần:
+builder.Logging.ClearProviders();          // xoá toàn bộ provider mặc định
+builder.Logging.AddConsole();              // chỉ giữ lại Console
+
+var app = builder.Build();
+
+app.MapGet("/", (ILogger&lt;Program&gt; logger) =&gt;
+{
+    logger.LogInformation("Root endpoint called");
+    return "Hello World!";
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Vì <code>ILoggerFactory</code> đã có trong DI container, bạn chỉ cần khai báo <code>ILogger&lt;T&gt;</code> là nhận được logger đúng category mà không cần khởi tạo thủ công.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Các thành phần của một log</h2>
+      <p class="subvideo-meta">Bài 2 · <em>The different parts of a Log</em></p>
+
+      <p>Mỗi dòng log được in ra (ví dụ ở console) bao gồm ba phần quan trọng: <strong>Log Level</strong>, <strong>Category</strong>, và <strong>Message</strong>.</p>
+
+      <h3>Log Level (Mức độ nghiêm trọng)</h3>
+      <p>Log level cho biết mức độ quan trọng / nghiêm trọng của sự kiện. ASP.NET Core định nghĩa 6 level theo thứ tự từ thấp đến cao:</p>
+
+      <table class="tbl">
+        <tr><th>Level</th><th>Enum value</th><th>Khi nào dùng</th></tr>
+        <tr><td><span class="tag">Trace</span></td><td>0</td><td>Thông tin cực kỳ chi tiết, chỉ bật khi cần trace từng bước (rất ảnh hưởng hiệu năng).</td></tr>
+        <tr><td><span class="tag">Debug</span></td><td>1</td><td>Thông tin hữu ích khi debug — luồng xử lý, giá trị biến trung gian.</td></tr>
+        <tr><td><span class="tag">Information</span></td><td>2</td><td>Sự kiện bình thường của ứng dụng: request đến, dịch vụ khởi động…</td></tr>
+        <tr><td><span class="tag">Warning</span></td><td>3</td><td>Tình huống không mong đợi nhưng ứng dụng vẫn xử lý được.</td></tr>
+        <tr><td><span class="tag">Error</span></td><td>4</td><td>Lỗi khiến một operation thất bại, cần điều tra.</td></tr>
+        <tr><td><span class="tag">Critical</span></td><td>5</td><td>Lỗi nghiêm trọng, ứng dụng có thể không tiếp tục hoạt động.</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Còn có <code>LogLevel.None</code> (giá trị 6) — dùng trong cấu hình để tắt hoàn toàn logging cho một category.</p>
+      </div>
+
+      <h3>Category (Nhóm / Nguồn gốc)</h3>
+      <p>Category xác định <em>nơi</em> log được ghi ra. Theo quy ước, category là <strong>tên đầy đủ của class</strong> (bao gồm namespace) sử dụng <code>ILogger&lt;T&gt;</code>. Ví dụ:</p>
+      <ul>
+        <li><code>MyApp.Controllers.EmployeesController</code></li>
+        <li><code>Microsoft.AspNetCore.Hosting.Diagnostics</code> (log của framework)</li>
+      </ul>
+      <p>Category giúp bạn lọc log theo namespace trong <code>appsettings.json</code> — ví dụ chỉ bật Debug cho namespace của riêng bạn mà không làm ngập console bởi log của Microsoft.</p>
+
+      <h3>Message (Thông điệp)</h3>
+      <p>Chuỗi văn bản mô tả sự kiện. Message có thể chứa <em>placeholder</em> cho structured logging (sẽ đề cập ở bài 4). Ngoài ra, mỗi log còn có <strong>Event ID</strong> — một số nguyên tùy chọn giúp tra cứu log theo loại sự kiện.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Console output (ví dụ)</span><span class="lang">text</span></div>
+        <pre><code>info: MyApp.Controllers.EmployeesController[0]
+      Getting employee list for department Sales</code></pre>
+      </div>
+      <p>Trong đó: <code>info</code> = Log Level, <code>MyApp.Controllers.EmployeesController</code> = Category, <code>[0]</code> = Event ID, dòng tiếp theo = Message.</p>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Ghi log với các provider mặc định</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Write Logs with default logger providers</em></p>
+
+      <p>Khi tạo project ASP.NET Core Empty, framework tự động đăng ký <strong>bốn provider</strong> vào DI container mà không cần cấu hình thêm:</p>
+
+      <table class="tbl">
+        <tr><th>Provider</th><th>Đích ghi log</th><th>Ghi chú</th></tr>
+        <tr><td><code>Console</code></td><td>Cửa sổ terminal / console</td><td>Luôn bật mặc định</td></tr>
+        <tr><td><code>Debug</code></td><td>Output window của Visual Studio (khi debug)</td><td>Luôn bật mặc định</td></tr>
+        <tr><td><code>EventSource</code></td><td>ETW / dotnet-trace</td><td>Dùng cho profiling chuyên sâu</td></tr>
+        <tr><td><code>EventLog</code></td><td>Windows Event Viewer</td><td><strong>Tắt mặc định</strong>, phải bật trong cấu hình; chỉ hoạt động trên Windows</td></tr>
+      </table>
+
+      <h3>Cấu hình Logging trong appsettings.json</h3>
+      <p>Phần <code>"Logging"</code> trong <code>appsettings.json</code> điều khiển ngưỡng log level theo <em>category prefix</em>. Cấu hình trong <code>appsettings.Development.json</code> sẽ <strong>ghi đè</strong> lên cấu hình chính khi chạy Development.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  }
+}</code></pre>
+      </div>
+
+      <p>Giải thích:</p>
+      <ul>
+        <li><code>"Default": "Information"</code> — mọi category không khớp quy tắc nào → ghi từ <code>Information</code> trở lên.</li>
+        <li><code>"Microsoft.AspNetCore": "Warning"</code> — các category bắt đầu bằng <code>Microsoft.AspNetCore</code> → chỉ ghi từ <code>Warning</code> trở lên, giúp giảm log "nhiễu" của framework.</li>
+      </ul>
+
+      <h3>Bật EventLog provider (Windows)</h3>
+      <p>Provider <code>EventLog</code> cần được bật tường minh bằng cách thêm section <code>Providers</code> vào cấu hình Logging:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.Development.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    },
+    "EventLog": {
+      "LogLevel": {
+        "Default": "Information",
+        "Microsoft.AspNetCore": "Warning"
+      }
+    }
+  }
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> <code>appsettings.Development.json</code> ghi đè <code>appsettings.json</code> ở môi trường Development. Nếu chỉ thêm cấu hình EventLog vào file chính nhưng file Development không có phần đó, cài đặt Development sẽ không thấy thay đổi.</p>
+      </div>
+
+      <h3>Cấu hình provider cụ thể vs. cấu hình chung</h3>
+      <p>Ngoài section <code>LogLevel</code> chung, bạn có thể cấu hình riêng cho từng provider (như <code>EventLog</code> ở trên). Cấu hình provider-specific sẽ <em>ưu tiên hơn</em> cấu hình chung khi provider đó xử lý log.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Khi cần debug một vấn đề cụ thể, hãy hạ <code>LogLevel</code> xuống <code>Debug</code> hoặc <code>Trace</code> chỉ cho category liên quan thay vì bật toàn bộ — tránh bị ngập log không cần thiết.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Tự ghi log của riêng bạn</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Write your own logs</em></p>
+
+      <p>Có hai mục đích chính khi tự ghi log trong ứng dụng:</p>
+      <ul>
+        <li><strong>Audit (Kiểm tra):</strong> ghi lại ai, lúc nào, thực hiện hành động gì — để truy vết hoạt động người dùng.</li>
+        <li><strong>Troubleshooting:</strong> ghi thông tin luồng xử lý, giá trị tham số giúp tìm nguyên nhân lỗi.</li>
+      </ul>
+
+      <h3>Inject ILogger&lt;T&gt; qua DI</h3>
+      <p>Cách chuẩn là khai báo <code>ILogger&lt;T&gt;</code> trong constructor. Type parameter <code>T</code> sẽ trở thành <em>category</em> của logger, giúp phân biệt log từ nhiều class.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">EmployeesController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.Extensions.Logging;
+
+public class EmployeesController : ControllerBase
+{
+    private readonly ILogger&lt;EmployeesController&gt; _logger;
+
+    public EmployeesController(ILogger&lt;EmployeesController&gt; logger)
+    {
+        _logger = logger;
+    }
+
+    [HttpGet("{department}")]
+    public IActionResult GetByDepartment(string department)
+    {
+        // Structured logging: {Department} là named placeholder
+        _logger.LogInformation(
+            "Getting employee list for department {Department}",
+            department);
+
+        // ... xử lý nghiệp vụ ...
+        return Ok();
+    }
+}</code></pre>
+      </div>
+
+      <h3>Trong Minimal API</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/{name}", (string name, ILogger&lt;Program&gt; logger) =&gt;
+{
+    logger.LogInformation(
+        "Request received from user {UserName} at {RequestTime}",
+        name,
+        DateTime.UtcNow);
+
+    return $"Hello, {name}!";
+});</code></pre>
+      </div>
+
+      <h3>Các phương thức log theo level</h3>
+      <p><code>ILogger</code> cung cấp extension method tương ứng cho từng level:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ các log method</span><span class="lang">csharp</span></div>
+        <pre><code>_logger.LogTrace("Trace detail: entering method {Method}", nameof(GetByDepartment));
+_logger.LogDebug("Debug: querying DB with filter {Filter}", filter);
+_logger.LogInformation("Employee list returned, count: {Count}", employees.Count);
+_logger.LogWarning("Department {Dept} not found, returning empty list", department);
+_logger.LogError(ex, "Error fetching employees for {Department}", department);
+_logger.LogCritical("Database connection lost — application cannot continue");</code></pre>
+      </div>
+
+      <h3>Structured Logging với named placeholder</h3>
+      <p>Sử dụng cú pháp <code>{PlaceholderName}</code> thay vì nối chuỗi giúp log provider lưu trữ dữ liệu dưới dạng key-value, cho phép truy vấn log theo thuộc tính (đặc biệt hữu ích với Seq, Elastic…).</p>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Quy tắc quan trọng:</strong> <em>không</em> dùng string interpolation (<code>$"User {name}"</code>) trong log message — hãy dùng template với placeholder (<code>"User {Name}", name</code>). String interpolation bỏ mất thông tin cấu trúc và gây cấp phát bộ nhớ thừa.</p>
+      </div>
+
+      <h3>LoggerMessage Source Generator (.NET 6+)</h3>
+      <p>Khi hiệu năng là ưu tiên, dùng <code>[LoggerMessage]</code> attribute để trình biên dịch sinh code log tối ưu (không boxing, không allocation thừa):</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">EmployeesController.cs (source generator)</span><span class="lang">csharp</span></div>
+        <pre><code>public partial class EmployeesController : ControllerBase
+{
+    private readonly ILogger&lt;EmployeesController&gt; _logger;
+
+    public EmployeesController(ILogger&lt;EmployeesController&gt; logger)
+        =&gt; _logger = logger;
+
+    // Source generator sinh method log hiệu năng cao
+    [LoggerMessage(
+        EventId = 1001,
+        Level = LogLevel.Information,
+        Message = "Getting employees for department {Department}")]
+    private partial void LogGettingEmployees(string department);
+
+    [HttpGet("{department}")]
+    public IActionResult GetByDepartment(string department)
+    {
+        LogGettingEmployees(department);  // gọi method đã được generate
+        return Ok();
+    }
+}</code></pre>
+      </div>
+
+      <h3>Đăng ký / tuỳ chỉnh providers bằng code</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Logging.ClearProviders();           // xoá toàn bộ provider mặc định
+builder.Logging.AddConsole();               // thêm lại Console
+// builder.Logging.AddProvider(new MyCustomProvider()); // provider tuỳ chỉnh</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Cơ bản về Serilog</h2>
+      <p class="subvideo-meta">Bài 5 · <em>The Basics of Using SeriLog</em></p>
+
+      <p><strong>Serilog</strong> là thư viện logging bên thứ ba phổ biến nhất cho .NET, nổi bật với:</p>
+      <ul>
+        <li><strong>Structured logging</strong> tốt hơn built-in — lưu log dưới dạng object, không chỉ chuỗi.</li>
+        <li>Hệ thống <strong>sink</strong> phong phú: Console, File, MSSqlServer, Elasticsearch, Azure Blob, Seq…</li>
+        <li><strong>Enricher</strong>: tự động gắn thêm thông tin (tên máy, thread, correlation ID…) vào mỗi log entry.</li>
+      </ul>
+
+      <h3>Cài đặt package</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Serilog.AspNetCore</code></pre>
+      </div>
+      <p>Package <code>Serilog.AspNetCore</code> đã bao gồm sẵn sink Console và tích hợp DI với ASP.NET Core. Để ghi ra file cần thêm <code>Serilog.Sinks.File</code> (thường được kéo vào tự động).</p>
+
+      <h3>Cấu hình Serilog trong Program.cs (cách cũ — static Log)</h3>
+      <p>Serilog có static class <code>Log</code> cho phép tạo logger toàn cục trước khi DI sẵn sàng (hữu ích để log lỗi ngay giai đoạn startup):</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Serilog;
+
+// Tạo logger tạm để bắt lỗi trong quá trình khởi động
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()                          // ngưỡng tối thiểu toàn cục
+    .WriteTo.Console()                             // sink: console
+    .WriteTo.File(
+        path: "Logs/log-.txt",                     // tên file (Serilog thêm timestamp)
+        rollingInterval: RollingInterval.Day)      // tạo file mới mỗi ngày
+    .CreateLogger();
+
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
+
+    // Tích hợp Serilog vào host — thay thế toàn bộ built-in logging
+    builder.Host.UseSerilog();
+
+    var app = builder.Build();
+
+    app.MapGet("/", () =&gt;
+    {
+        Log.Information("Root endpoint hit");
+        return "Hello World!";
+    });
+
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application failed to start");
+}
+finally
+{
+    Log.CloseAndFlush();   // đảm bảo flush buffer trước khi thoát
+}</code></pre>
+      </div>
+
+      <h3>RollingInterval — file log xoay vòng</h3>
+      <p>Tham số <code>rollingInterval</code> quyết định tần suất tạo file log mới:</p>
+      <table class="tbl">
+        <tr><th>Giá trị</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>RollingInterval.Minute</code></td><td>Tạo file mới mỗi phút (chỉ dùng khi demo/debug)</td></tr>
+        <tr><td><code>RollingInterval.Hour</code></td><td>Tạo file mới mỗi giờ</td></tr>
+        <tr><td><code>RollingInterval.Day</code></td><td>Tạo file mới mỗi ngày (khuyến nghị cho production)</td></tr>
+        <tr><td><code>RollingInterval.Month</code></td><td>Tạo file mới mỗi tháng</td></tr>
+      </table>
+      <p>Tên file sẽ tự động có timestamp ở cuối, ví dụ: <code>log-20241215.txt</code>.</p>
+
+      <h3>Log levels của Serilog</h3>
+      <p>Serilog dùng tên level hơi khác so với built-in ASP.NET Core:</p>
+      <table class="tbl">
+        <tr><th>Serilog</th><th>Tương đương ASP.NET Core</th></tr>
+        <tr><td><code>Verbose</code></td><td><code>Trace</code></td></tr>
+        <tr><td><code>Debug</code></td><td><code>Debug</code></td></tr>
+        <tr><td><code>Information</code></td><td><code>Information</code></td></tr>
+        <tr><td><code>Warning</code></td><td><code>Warning</code></td></tr>
+        <tr><td><code>Error</code></td><td><code>Error</code></td></tr>
+        <tr><td><code>Fatal</code></td><td><code>Critical</code></td></tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Serilog hỗ trợ nhiều sink hơn: <code>Serilog.Sinks.MSSqlServer</code>, <code>Serilog.Sinks.Elasticsearch</code>, <code>Serilog.Sinks.AzureTableStorage</code>… Chọn sink phù hợp giúp giảm chi phí lưu trữ và tăng khả năng truy vấn log.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Dùng Serilog như built-in logger</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Use SeriLog similar to the built-in logger</em></p>
+
+      <p>Ở bài trước, chúng ta dùng <code>Log.Information()</code> — static class của Serilog. Cách này hoạt động nhưng <strong>không nhất quán</strong> với kiến trúc DI của ASP.NET Core. Cách tốt hơn là đăng ký Serilog vào DI container và inject <code>ILogger&lt;T&gt;</code> như bình thường — giữ code thống nhất, dễ thay thế sau này.</p>
+
+      <h3>Đăng ký Serilog qua AddSerilog (khuyến nghị)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Serilog;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.Console()
+    .WriteTo.File("Logs/log-.txt", rollingInterval: RollingInterval.Day)
+    .Enrich.FromLogContext()                       // enricher: thêm context tự động
+    .CreateLogger();
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Cách 1: dùng Host.UseSerilog() — thay thế toàn bộ logging pipeline
+builder.Host.UseSerilog();
+
+// Cách 2 (tương đương, .NET 8+): dùng Services.AddSerilog()
+// builder.Services.AddSerilog();
+
+var app = builder.Build();</code></pre>
+      </div>
+
+      <h3>Inject ILogger&lt;T&gt; — giống hệt built-in</h3>
+      <p>Sau khi đăng ký, mọi nơi trong ứng dụng đều inject <code>ILogger&lt;T&gt;</code> y hệt như khi dùng built-in logging:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">EmployeesController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class EmployeesController : ControllerBase
+{
+    private readonly ILogger&lt;EmployeesController&gt; _logger;
+
+    public EmployeesController(ILogger&lt;EmployeesController&gt; logger)
+    {
+        _logger = logger;
+    }
+
+    [HttpGet("{department}")]
+    public IActionResult GetByDepartment(string department)
+    {
+        // Structured logging — hoàn toàn giống built-in ILogger
+        _logger.LogInformation(
+            "Getting employees for {Department} requested by {User}",
+            department,
+            User.Identity?.Name ?? "anonymous");
+
+        var employees = new[] { "Alice", "Bob" }; // demo
+        return Ok(employees);
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs (Minimal API với DI logger)</span><span class="lang">csharp</span></div>
+        <pre><code>// Inject ILogger&lt;Program&gt; qua tham số endpoint handler
+app.MapGet("/{name}", (string name, ILogger&lt;Program&gt; logger) =&gt;
+{
+    logger.LogInformation(
+        "Greeting requested for {UserName} at {Time}",
+        name,
+        DateTime.UtcNow);
+
+    return $"Hello, {name}!";
+});</code></pre>
+      </div>
+
+      <h3>Tại sao nên dùng ILogger&lt;T&gt; thay vì Log.xxx static?</h3>
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>Static <code>Log.xxx</code></th><th>Inject <code>ILogger&lt;T&gt;</code></th></tr>
+        <tr><td>Nhất quán với ASP.NET Core</td><td>Không</td><td>Có</td></tr>
+        <tr><td>Dễ unit test (mock)</td><td>Khó</td><td>Dễ (mock interface)</td></tr>
+        <tr><td>Thay thế logging library</td><td>Phải sửa nhiều nơi</td><td>Chỉ sửa đăng ký DI</td></tr>
+        <tr><td>Category tự động theo class</td><td>Phải chỉ định thủ công</td><td>Tự động qua <code>T</code></td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Best practice:</strong> Luôn dùng <code>ILogger&lt;T&gt;</code> qua DI trong controllers, services, pages. Chỉ dùng <code>Log</code> static ở <strong>trước</strong> khi DI container sẵn sàng (ví dụ: bắt lỗi ngay khi khởi động trong khối <code>try/catch</code> của <code>Program.cs</code>). Nhờ đó, nếu mai này muốn bỏ Serilog để dùng NLog hay OpenTelemetry, bạn chỉ cần thay một dòng đăng ký.</p>
+      </div>
+
+      <h3>Cấu hình Serilog qua appsettings.json</h3>
+      <p>Thay vì hard-code trong C#, có thể đọc cấu hình từ file — cần thêm package <code>Serilog.Settings.Configuration</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft.AspNetCore": "Warning",
+        "System": "Warning"
+      }
+    },
+    "WriteTo": [
+      { "Name": "Console" },
+      {
+        "Name": "File",
+        "Args": {
+          "path": "Logs/log-.txt",
+          "rollingInterval": "Day"
+        }
+      }
+    ],
+    "Enrich": [ "FromLogContext", "WithMachineName", "WithThreadId" ]
+  }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs (đọc cấu hình từ appsettings)</span><span class="lang">csharp</span></div>
+        <pre><code>using Serilog;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, config) =&gt;
+    config.ReadFrom.Configuration(context.Configuration));
+
+var app = builder.Build();
+// ... phần còn lại như bình thường
+app.Run();</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-25.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">25 · Configuration</div>
+      </a>
+      <a class="next" href="lesson-27.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">27 · Exception Handling</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

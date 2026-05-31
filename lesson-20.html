@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 20 — Consume API (Tiêu thụ API) | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 20 — Consume API (Tiêu thụ API)</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Dùng IHttpClientFactory gọi API</a></li>
+      <li><a href="#s2">2. Named Client với IHttpClientFactory</a></li>
+      <li><a href="#s3">3. Gọi API từ lớp Repository</a></li>
+      <li><a href="#s4">4. HttpClient hoạt động như thế nào</a></li>
+      <li><a href="#s5">5. Dùng Polly xử lý lỗi tạm thời</a></li>
+      <li><a href="#s6">6. Bài tập 12 — Gọi API trong DepartmentsController</a></li>
+      <li><a href="#s7">7. Đáp án Bài tập 12</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 20</span>
+      <h1>Consume API (Tiêu thụ API)</h1>
+      <p class="lead">Cách gọi API từ ứng dụng ASP.NET Core — sử dụng <code>HttpClient</code>, <code>IHttpClientFactory</code>, Named Client, hiểu cơ chế bên trong của HttpClient, và dùng Polly để xử lý lỗi mạng tạm thời.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Dùng IHttpClientFactory gọi API</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Use HttpClientFactory to access API endpoints</em></p>
+
+      <p>Khi ứng dụng ASP.NET Core cần <strong>gọi một Web API bên ngoài</strong> (hoặc một service khác trong cùng hệ thống), ta cần một HTTP client để gửi request và nhận response. .NET cung cấp lớp <code>HttpClient</code> cho mục đích này, nhưng cách tốt nhất để sử dụng nó là thông qua <strong><code>IHttpClientFactory</code></strong>.</p>
+
+      <h3>Tại sao không dùng <code>new HttpClient()</code> trực tiếp?</h3>
+      <p>Tạo <code>HttpClient</code> bằng <code>new</code> trong mỗi request là một anti-pattern phổ biến. Dù <code>HttpClient</code> implements <code>IDisposable</code>, việc gọi <code>Dispose()</code> thường xuyên <strong>không</strong> đóng ngay socket bên dưới — socket vẫn ở trạng thái <em>TIME_WAIT</em> trong vài phút, dẫn đến tình trạng cạn kiệt socket (<em>socket exhaustion</em>). Ngược lại, giữ một instance duy nhất thì lại không phản ứng kịp khi DNS thay đổi.</p>
+
+      <p><code>IHttpClientFactory</code> giải quyết cả hai vấn đề: nó <strong>quản lý vòng đời</strong> của các <code>HttpMessageHandler</code> bên trong (pool và tái dùng), đồng thời tự động làm mới handler sau mỗi 2 phút để phản ánh thay đổi DNS.</p>
+
+      <h3>Đăng ký IHttpClientFactory</h3>
+      <p>Chỉ cần gọi <code>AddHttpClient()</code> trong <code>Program.cs</code> — sau đó <code>IHttpClientFactory</code> sẵn sàng được inject vào bất kỳ class nào.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages();
+
+// Đăng ký IHttpClientFactory vào DI container
+builder.Services.AddHttpClient();
+
+var app = builder.Build();
+// ... middleware pipeline
+app.Run();</code></pre>
+      </div>
+
+      <h3>Sử dụng trong Controller</h3>
+      <p>Inject <code>IHttpClientFactory</code> vào constructor, gọi <code>CreateClient()</code> để lấy một <code>HttpClient</code>, sau đó đặt <code>BaseAddress</code> và thực hiện request.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class DepartmentsController : Controller
+{
+    private readonly IHttpClientFactory httpClientFactory;
+
+    public DepartmentsController(IHttpClientFactory httpClientFactory)
+    {
+        this.httpClientFactory = httpClientFactory;
+    }
+
+    [HttpGet]
+    public async Task&lt;IActionResult&gt; Details(int id)
+    {
+        var client = httpClientFactory.CreateClient();
+        client.BaseAddress = new Uri("http://localhost:5065/");
+
+        var response = await client.GetAsync($"departments/{id}");
+        response.EnsureSuccessStatusCode();
+
+        var responseString = await response.Content.ReadAsStringAsync();
+        var department = JsonSerializer.Deserialize&lt;Department&gt;(
+            responseString,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        return View(department);
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <code>response.EnsureSuccessStatusCode()</code> sẽ ném ra <code>HttpRequestException</code> nếu status code không nằm trong khoảng 2xx. Đây là cách nhanh nhất để phát hiện lỗi từ API phía server.</p>
+      </div>
+
+      <h3>Deserialize JSON response</h3>
+      <p>API thường trả về JSON với tên property theo kiểu <em>camelCase</em> (vd: <code>departmentId</code>), trong khi model C# dùng <em>PascalCase</em>. Cần đặt <code>PropertyNameCaseInsensitive = true</code> khi deserialize để tránh lỗi ánh xạ.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Từ .NET 7 trở đi, bạn cũng có thể dùng phương thức tiện lợi hơn: <code>await response.Content.ReadFromJsonAsync&lt;Department&gt;()</code> (yêu cầu <code>System.Net.Http.Json</code>) thay vì đọc chuỗi rồi deserialize thủ công.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Named Client với IHttpClientFactory</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Create a Named Client with HttpClientFactory</em></p>
+
+      <p>Ở bài trước, mỗi lần dùng <code>CreateClient()</code> ta phải set lại <code>BaseAddress</code> và các header mặc định — điều này vi phạm nguyên tắc DRY (Don't Repeat Yourself). <strong>Named Client</strong> cho phép khai báo cấu hình một lần ở <code>Program.cs</code> rồi dùng lại bằng tên ở mọi nơi.</p>
+
+      <h3>Đăng ký Named Client</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Đăng ký Named Client tên "ApiEndpoints"
+builder.Services.AddHttpClient("ApiEndpoints", (HttpClient client) =&gt;
+{
+    client.BaseAddress = new Uri("http://localhost:5065/");
+    // Có thể thêm header mặc định:
+    // client.DefaultRequestHeaders.Add("Accept", "application/json");
+});</code></pre>
+      </div>
+
+      <h3>Sử dụng Named Client</h3>
+      <p>Truyền đúng tên đã đăng ký vào <code>CreateClient()</code>. Lúc này factory sẽ tạo <code>HttpClient</code> đã được cấu hình sẵn — không cần set <code>BaseAddress</code> lại nữa.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Dùng Named Client — BaseAddress đã được cấu hình sẵn
+var client = httpClientFactory.CreateClient("ApiEndpoints");
+
+var response = await client.GetAsync($"departments/{id}");
+response.EnsureSuccessStatusCode();</code></pre>
+      </div>
+
+      <h3>So sánh các cách dùng IHttpClientFactory</h3>
+      <table class="tbl">
+        <tr>
+          <th>Cách</th>
+          <th>Đặc điểm</th>
+          <th>Khi nào dùng</th>
+        </tr>
+        <tr>
+          <td><strong>Basic</strong> — <code>CreateClient()</code></td>
+          <td>Trả về client chưa cấu hình, phải set thủ công</td>
+          <td>Khi gọi nhiều API khác nhau, mỗi nơi một cấu hình riêng</td>
+        </tr>
+        <tr>
+          <td><strong>Named Client</strong> — <code>CreateClient("tên")</code></td>
+          <td>Cấu hình tập trung trong <code>Program.cs</code>, tái dùng qua tên</td>
+          <td>Khi nhiều chỗ gọi cùng một API với cùng cấu hình</td>
+        </tr>
+        <tr>
+          <td><strong>Typed Client</strong></td>
+          <td>Gói HttpClient vào một class strongly-typed</td>
+          <td>Khi muốn encapsulate logic gọi API vào service riêng</td>
+        </tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> Named Client giúp cấu hình HttpClient (base URL, headers, timeout) <strong>tập trung một chỗ</strong>, dễ thay đổi và không bị lặp code ở nhiều controller/service.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Gọi API từ lớp Repository</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Call API endpoints from our repository class</em></p>
+
+      <p>Thay vì để logic gọi API nằm trong Controller (vi phạm Single Responsibility), ta nên tách ra thành một lớp <strong>Repository</strong> riêng. Repository này đóng gói toàn bộ giao tiếp với API — controller chỉ cần gọi phương thức của repository mà không cần biết HTTP bên trong.</p>
+
+      <h3>Interface Repository</h3>
+      <p>Định nghĩa contract — những thao tác nào cần thiết với API departments:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/IDepartmentsApiRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public interface IDepartmentsApiRepository
+    {
+        Task&lt;Department?&gt; GetDepartmentByIdAsync(int id);
+        Task&lt;List&lt;Department&gt;&gt; GetDepartmentsAsync(string? filter = null);
+        Task AddDepartmentAsync(Department? department);
+        Task&lt;bool&gt; UpdateDepartmentAsync(Department? department);
+        Task&lt;bool&gt; DeleteDepartmentAsync(Department? department);
+        Task&lt;bool&gt; DepartmentExistsAsync(int departmentId);
+    }
+}</code></pre>
+      </div>
+
+      <h3>Triển khai Repository</h3>
+      <p>Inject <code>IHttpClientFactory</code> vào repository, dùng Named Client để gọi API:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/DepartmentsApiRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Text.Json;
+
+namespace WebApp.Models
+{
+    public class DepartmentsApiRepository : IDepartmentsApiRepository
+    {
+        private readonly IHttpClientFactory httpClientFactory;
+
+        public DepartmentsApiRepository(IHttpClientFactory httpClientFactory)
+        {
+            this.httpClientFactory = httpClientFactory;
+        }
+
+        public async Task&lt;Department?&gt; GetDepartmentByIdAsync(int id)
+        {
+            var client = httpClientFactory.CreateClient("ApiEndpoints");
+
+            var response = await client.GetAsync($"departments/{id}");
+            response.EnsureSuccessStatusCode();
+
+            var responseString = await response.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize&lt;Department&gt;(
+                responseString,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+
+        // ... các phương thức khác
+    }
+}</code></pre>
+      </div>
+
+      <h3>Đăng ký trong Program.cs</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Đăng ký repository với lifetime Transient (mỗi lần inject = 1 instance mới)
+builder.Services.AddTransient&lt;IDepartmentsApiRepository, DepartmentsApiRepository&gt;();
+
+builder.Services.AddHttpClient("ApiEndpoints", (HttpClient client) =&gt;
+{
+    client.BaseAddress = new Uri("http://localhost:5065/");
+});</code></pre>
+      </div>
+
+      <h3>Controller sạch hơn nhờ Repository</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class DepartmentsController : Controller
+{
+    private readonly IDepartmentsApiRepository departmentsApiRepository;
+
+    public DepartmentsController(IDepartmentsApiRepository departmentsApiRepository)
+    {
+        this.departmentsApiRepository = departmentsApiRepository;
+    }
+
+    [HttpGet]
+    public async Task&lt;IActionResult&gt; Details(int id)
+    {
+        // Controller không biết gì về HttpClient — chỉ gọi repository
+        var department = await departmentsApiRepository.GetDepartmentByIdAsync(id);
+        return View(department);
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Pattern này rất phổ biến trong các ứng dụng thực tế. Khi cần chuyển từ gọi API sang truy cập DB trực tiếp (hoặc ngược lại), bạn chỉ cần tạo một implementation mới của interface và thay đổi đăng ký trong <code>Program.cs</code> — controller hoàn toàn không bị ảnh hưởng.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> HttpClient hoạt động như thế nào</h2>
+      <p class="subvideo-meta">Bài 4 · <em>How HttpClient works</em></p>
+
+      <p><code>HttpClient</code> không gửi request trực tiếp đến server — bên trong nó sử dụng một <strong>pipeline các <code>HttpMessageHandler</code></strong>, tương tự middleware pipeline của ASP.NET Core nhưng dành cho phía client (outgoing request).</p>
+
+      <h3>Kiến trúc DelegatingHandler</h3>
+      <p>Mỗi handler trong pipeline nhận request, có thể xử lý/thay đổi nó, rồi chuyển cho handler tiếp theo bằng <code>base.SendAsync()</code>. Handler cuối cùng (<code>HttpClientHandler</code>) thực sự gửi request qua mạng và nhận response. Response đi ngược lại qua pipeline.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Sơ đồ pipeline</span><span class="lang">text</span></div>
+        <pre><code>HttpClient.GetAsync(url)
+    |
+    v
+[DelegatingHandler 1]  &lt;-- có thể thêm header, log, validate...
+    |
+    v
+[DelegatingHandler 2]  &lt;-- có thể retry, circuit breaker...
+    |
+    v
+[HttpClientHandler]    &lt;-- gửi request qua mạng thật
+    |
+    v  (response trả ngược lại qua các handler)
+HttpResponseMessage</code></pre>
+      </div>
+
+      <h3>Tự viết DelegatingHandler</h3>
+      <p>Kế thừa <code>DelegatingHandler</code> và override <code>SendAsync</code>. Ví dụ dưới đây kiểm tra header <code>X-API-KEY</code> trước khi cho request đi tiếp:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">MessageHandlers/ValidateApiHeaderHandler.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.MessageHandlers
+{
+    public class ValidateApiHeaderHandler : DelegatingHandler
+    {
+        protected override async Task&lt;HttpResponseMessage&gt; SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            // Kiểm tra header bắt buộc
+            if (!request.Headers.Contains("X-API-KEY"))
+            {
+                return new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("The API key header X-API-KEY is required.")
+                };
+            }
+
+            // Chuyển tiếp cho handler tiếp theo
+            return await base.SendAsync(request, cancellationToken);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Gắn Handler vào Named Client</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Đăng ký handler vào DI (phải là Transient)
+builder.Services.AddTransient&lt;ValidateApiHeaderHandler&gt;();
+
+builder.Services.AddHttpClient("ApiEndpoints", (HttpClient client) =&gt;
+{
+    client.BaseAddress = new Uri("http://localhost:5065/");
+})
+.AddHttpMessageHandler&lt;ValidateApiHeaderHandler&gt;(); // gắn vào pipeline</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <code>DelegatingHandler</code> phải được đăng ký là <strong>Transient</strong> (không phải Singleton hay Scoped) để tránh các vấn đề về thread-safety và vòng đời khi được resolve bởi factory.</p>
+      </div>
+
+      <h3>Ứng dụng thực tế của DelegatingHandler</h3>
+      <ul>
+        <li>Tự động thêm <strong>Authorization header</strong> (Bearer token) vào mọi request.</li>
+        <li><strong>Logging</strong> toàn bộ request/response mà không cần thay đổi code gọi.</li>
+        <li><strong>Retry</strong> tự động khi gặp lỗi mạng (thường dùng Polly — xem bài tiếp).</li>
+        <li><strong>Circuit Breaker</strong> — ngừng gọi API khi phát hiện lỗi liên tiếp, cho API thời gian hồi phục.</li>
+        <li>Ghi đè URL hoặc thêm query string tự động.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Dùng Polly xử lý lỗi tạm thời</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Use Polly to deal with temporary errors</em></p>
+
+      <p>Khi ứng dụng gọi một API bên ngoài, các lỗi mạng tạm thời là điều không thể tránh khỏi — timeout, mất kết nối ngắn hạn, server đang restart, v.v. Thay vì để người dùng thấy lỗi ngay lập tức, <strong>Polly</strong> cho phép định nghĩa các <em>resilience policy</em> (chính sách phục hồi) như retry, circuit breaker, fallback.</p>
+
+      <h3>Cài đặt package</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Microsoft.Extensions.Http.Polly</code></pre>
+      </div>
+
+      <h3>Thêm Retry Policy vào Named Client</h3>
+      <p>Gọi <code>AddTransientHttpErrorPolicy()</code> trên kết quả của <code>AddHttpClient()</code>. Policy này tự động retry khi gặp lỗi mạng hoặc status code 5xx/408:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Polly;
+
+builder.Services.AddHttpClient("ApiEndpoints", (HttpClient client) =&gt;
+{
+    client.BaseAddress = new Uri("http://localhost:5065/");
+})
+.AddTransientHttpErrorPolicy(policy =&gt;
+{
+    // Retry 3 lần, mỗi lần chờ tăng dần: 100ms, 200ms, 300ms
+    return policy.WaitAndRetryAsync(new[]
+    {
+        TimeSpan.FromMilliseconds(100),
+        TimeSpan.FromMilliseconds(200),
+        TimeSpan.FromMilliseconds(300),
+    });
+});</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <code>AddTransientHttpErrorPolicy</code> chỉ áp dụng cho <strong>lỗi tạm thời</strong> (transient errors): lỗi mạng (<code>HttpRequestException</code>), timeout (<code>TaskCanceledException</code>), và HTTP 5xx hoặc 408. Nó <em>không</em> retry với HTTP 4xx (như 401, 404) vì đó là lỗi logic, không phải lỗi hạ tầng.</p>
+      </div>
+
+      <h3>AddStandardResilienceHandler (.NET 8+)</h3>
+      <p>Từ .NET 8, Microsoft giới thiệu <code>Microsoft.Extensions.Http.Resilience</code> — một cách hiện đại hơn để cấu hình resilience với Polly v8:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs (.NET 9 — cách hiện đại)</span><span class="lang">csharp</span></div>
+        <pre><code>// Cài: dotnet add package Microsoft.Extensions.Http.Resilience
+builder.Services.AddHttpClient("ApiEndpoints", client =&gt;
+{
+    client.BaseAddress = new Uri("http://localhost:5065/");
+})
+.AddStandardResilienceHandler(options =&gt;
+{
+    // Tuỳ chỉnh retry (mặc định đã có retry + circuit breaker)
+    options.Retry.MaxRetryAttempts = 3;
+    options.Retry.Delay = TimeSpan.FromMilliseconds(200);
+});</code></pre>
+      </div>
+
+      <h3>Các Policy phổ biến của Polly</h3>
+      <table class="tbl">
+        <tr>
+          <th>Policy</th>
+          <th>Mô tả</th>
+        </tr>
+        <tr>
+          <td><strong>Retry</strong></td>
+          <td>Tự động thử lại sau khi gặp lỗi, có thể cấu hình số lần và thời gian chờ</td>
+        </tr>
+        <tr>
+          <td><strong>WaitAndRetry</strong></td>
+          <td>Retry với thời gian chờ tăng dần (<em>exponential backoff</em>) để tránh quá tải server</td>
+        </tr>
+        <tr>
+          <td><strong>Circuit Breaker</strong></td>
+          <td>Ngừng gọi API sau N lần lỗi liên tiếp, chờ một khoảng thời gian rồi thử lại</td>
+        </tr>
+        <tr>
+          <td><strong>Timeout</strong></td>
+          <td>Hủy request nếu không nhận được response trong thời gian cho phép</td>
+        </tr>
+        <tr>
+          <td><strong>Fallback</strong></td>
+          <td>Trả về giá trị dự phòng khi mọi retry đều thất bại</td>
+        </tr>
+      </table>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Khi dùng Retry, hãy đảm bảo API phía server <strong>idempotent</strong> — tức là gọi nhiều lần cùng request cho kết quả như nhau. Retry một request POST tạo dữ liệu có thể tạo ra bản ghi trùng lặp!</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Bài tập 12 — Gọi API trong DepartmentsController</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Assignment 12 - Invoke API in DepartmentsController</em></p>
+
+      <p>Bài tập này củng cố toàn bộ kiến thức chương: thay thế repository truy cập dữ liệu trực tiếp bằng <strong>API repository</strong> để mọi action trong <code>DepartmentsController</code> đều gọi qua HTTP.</p>
+
+      <h3>Yêu cầu bài tập</h3>
+      <p>Ở các bài trước, <code>DepartmentsController</code> dùng <code>IDepartmentsRepository</code> (truy cập list in-memory). Nhiệm vụ là:</p>
+      <ol class="steps">
+        <li>Hoàn thiện interface <code>IDepartmentsApiRepository</code> với đầy đủ 6 phương thức (Get, GetById, Add, Update, Delete, Exists).</li>
+        <li>Triển khai <code>DepartmentsApiRepository</code> — mỗi phương thức gọi endpoint tương ứng trên Web API.</li>
+        <li>Sửa <code>DepartmentsController</code> để inject <code>IDepartmentsApiRepository</code> thay vì <code>IDepartmentsRepository</code>.</li>
+        <li>Đổi tất cả action từ đồng bộ sang <code>async Task&lt;IActionResult&gt;</code>.</li>
+        <li>Đăng ký <code>IDepartmentsApiRepository</code> và Named Client trong <code>Program.cs</code>.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Các HTTP method ánh xạ tự nhiên với CRUD: <code>GET</code> = đọc, <code>POST</code> = tạo, <code>PUT</code> = cập nhật toàn bộ, <code>DELETE</code> = xóa. Kiểm tra API project để biết đúng endpoint URL của từng thao tác.</p>
+      </div>
+
+      <h3>Gợi ý — gửi JSON body với POST/PUT</h3>
+      <p>Để gửi một object dưới dạng JSON body, dùng <code>StringContent</code> với content type <code>application/json</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Gợi ý gửi POST request</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Text;
+using static System.Net.Mime.MediaTypeNames;
+
+var departmentJson = new StringContent(
+    JsonSerializer.Serialize(department),
+    Encoding.UTF8,
+    Application.Json);           // "application/json"
+
+var response = await client.PostAsync("/departments", departmentJson);
+response.EnsureSuccessStatusCode();</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Đáp án Bài tập 12</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Assignment 12 (Answer) - Invoke API in DepartmentsController</em></p>
+
+      <p>Dưới đây là toàn bộ code đáp án cho bài tập 12, lấy trực tiếp từ source code của giảng viên.</p>
+
+      <h3>IDepartmentsApiRepository (đầy đủ)</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/IDepartmentsApiRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public interface IDepartmentsApiRepository
+    {
+        Task&lt;Department?&gt; GetDepartmentByIdAsync(int id);
+        Task&lt;List&lt;Department&gt;&gt; GetDepartmentsAsync(string? filter = null);
+        Task AddDepartmentAsync(Department? department);
+        Task&lt;bool&gt; UpdateDepartmentAsync(Department? department);
+        Task&lt;bool&gt; DeleteDepartmentAsync(Department? department);
+        Task&lt;bool&gt; DepartmentExistsAsync(int departmentId);
+    }
+}</code></pre>
+      </div>
+
+      <h3>DepartmentsApiRepository (đầy đủ)</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/DepartmentsApiRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Text;
+using System.Text.Json;
+using static System.Net.Mime.MediaTypeNames;
+
+namespace WebApp.Models
+{
+    public class DepartmentsApiRepository : IDepartmentsApiRepository
+    {
+        private readonly IHttpClientFactory httpClientFactory;
+
+        public DepartmentsApiRepository(IHttpClientFactory httpClientFactory)
+        {
+            this.httpClientFactory = httpClientFactory;
+        }
+
+        public async Task&lt;Department?&gt; GetDepartmentByIdAsync(int id)
+        {
+            var client = httpClientFactory.CreateClient("ApiEndpoints");
+            var response = await client.GetAsync($"departments/{id}");
+            response.EnsureSuccessStatusCode();
+
+            var responseString = await response.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize&lt;Department&gt;(
+                responseString,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+
+        public async Task&lt;List&lt;Department&gt;&gt; GetDepartmentsAsync(string? filter = null)
+        {
+            var client = httpClientFactory.CreateClient("ApiEndpoints");
+            var response = await client.GetAsync($"departments/{filter}");
+            response.EnsureSuccessStatusCode();
+
+            var responseString = await response.Content.ReadAsStringAsync();
+            var departments = JsonSerializer.Deserialize&lt;List&lt;Department&gt;&gt;(
+                responseString,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            return departments ?? new List&lt;Department&gt;();
+        }
+
+        public async Task AddDepartmentAsync(Department? department)
+        {
+            var client = httpClientFactory.CreateClient("ApiEndpoints");
+
+            var departmentJson = new StringContent(
+                JsonSerializer.Serialize(department),
+                Encoding.UTF8,
+                Application.Json);
+
+            var response = await client.PostAsync("/departments", departmentJson);
+            response.EnsureSuccessStatusCode();
+        }
+
+        public async Task&lt;bool&gt; UpdateDepartmentAsync(Department? department)
+        {
+            if (department is null) return false;
+
+            var client = httpClientFactory.CreateClient("ApiEndpoints");
+
+            var departmentJson = new StringContent(
+                JsonSerializer.Serialize(department),
+                Encoding.UTF8,
+                Application.Json);
+
+            var response = await client.PutAsync($"/departments/{department.Id}", departmentJson);
+            response.EnsureSuccessStatusCode();
+            return true;
+        }
+
+        public async Task&lt;bool&gt; DeleteDepartmentAsync(Department? department)
+        {
+            if (department is null) return false;
+
+            var client = httpClientFactory.CreateClient("ApiEndpoints");
+            var response = await client.DeleteAsync($"/departments/{department.Id}");
+            response.EnsureSuccessStatusCode();
+            return true;
+        }
+
+        public async Task&lt;bool&gt; DepartmentExistsAsync(int departmentId)
+        {
+            var client = httpClientFactory.CreateClient("ApiEndpoints");
+            var response = await client.GetAsync($"departments/{departmentId}/exists");
+            response.EnsureSuccessStatusCode();
+
+            var responseString = await response.Content.ReadAsStringAsync();
+            return bool.Parse(responseString);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>DepartmentsController — hoàn toàn async, dùng API Repository</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Controllers
+{
+    public class DepartmentsController : Controller
+    {
+        private readonly IDepartmentsApiRepository departmentsApiRepository;
+
+        public DepartmentsController(IDepartmentsApiRepository departmentsApiRepository)
+        {
+            this.departmentsApiRepository = departmentsApiRepository;
+        }
+
+        [HttpGet]
+        public IActionResult Index() =&gt; View();
+
+        [HttpGet]
+        public async Task&lt;IActionResult&gt; Details(int id)
+        {
+            var department = await departmentsApiRepository.GetDepartmentByIdAsync(id);
+            return View(department);
+        }
+
+        [HttpGet]
+        public IActionResult Create() =&gt; View(new Department());
+
+        [HttpPost]
+        public async Task&lt;IActionResult&gt; Create(Department department)
+        {
+            await departmentsApiRepository.AddDepartmentAsync(department);
+            return RedirectToAction(nameof(Index));
+        }
+
+        [HttpPost]
+        public async Task&lt;IActionResult&gt; Edit(Department department)
+        {
+            await departmentsApiRepository.UpdateDepartmentAsync(department);
+            return RedirectToAction(nameof(Index));
+        }
+
+        [HttpPost]
+        public async Task&lt;IActionResult&gt; Delete(int id)
+        {
+            var department = await departmentsApiRepository.GetDepartmentByIdAsync(id);
+            await departmentsApiRepository.DeleteDepartmentAsync(department);
+            return RedirectToAction(nameof(Index));
+        }
+
+        [HttpGet]
+        public async Task&lt;IActionResult&gt; GetDepartments()
+        {
+            var departments = await departmentsApiRepository.GetDepartmentsAsync();
+            return Json(departments);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Program.cs hoàn chỉnh</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Polly;
+using WebApp.Filters;
+using WebApp.MessageHandlers;
+using WebApp.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages().AddMvcOptions(options =&gt;
+{
+    options.Filters.Add&lt;WriteToConsoleResourceFilter&gt;();
+});
+
+// Đăng ký repositories
+builder.Services.AddSingleton&lt;IDepartmentsRepository, DepartmentsRepository&gt;();
+builder.Services.AddSingleton&lt;IEmployeesRepository, EmployeesRepository&gt;();
+builder.Services.AddTransient&lt;IDepartmentsApiRepository, DepartmentsApiRepository&gt;();
+builder.Services.AddTransient&lt;ValidateApiHeaderHandler&gt;();
+
+// Named Client với Polly retry policy
+builder.Services.AddHttpClient("ApiEndpoints", (HttpClient client) =&gt;
+{
+    client.BaseAddress = new Uri("http://localhost:5065/");
+})
+.AddTransientHttpErrorPolicy(policy =&gt;
+{
+    return policy.WaitAndRetryAsync(new[]
+    {
+        TimeSpan.FromMilliseconds(100),
+        TimeSpan.FromMilliseconds(200),
+        TimeSpan.FromMilliseconds(300),
+    });
+});
+
+var app = builder.Build();
+
+app.UseStaticFiles();
+app.UseRouting();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.MapRazorPages();
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> Kiến trúc hoàn chỉnh: <strong>Controller</strong> inject <code>IDepartmentsApiRepository</code> → <strong>Repository</strong> inject <code>IHttpClientFactory</code> → factory tạo <strong>Named HttpClient</strong> đã được cấu hình sẵn với BaseAddress và Polly retry policy. Mỗi lớp chỉ biết về lớp ngay dưới nó — đây là nguyên tắc <em>separation of concerns</em>.</p>
+      </div>
+
+      <h3>Tổng kết chương</h3>
+      <table class="tbl">
+        <tr>
+          <th>Kỹ thuật</th>
+          <th>Vai trò</th>
+        </tr>
+        <tr>
+          <td><code>AddHttpClient()</code></td>
+          <td>Đăng ký <code>IHttpClientFactory</code> vào DI, quản lý pool handler</td>
+        </tr>
+        <tr>
+          <td>Named Client</td>
+          <td>Cấu hình BaseAddress / header một lần, dùng qua tên ở mọi nơi</td>
+        </tr>
+        <tr>
+          <td>API Repository</td>
+          <td>Tách logic HTTP ra khỏi controller, dễ test và thay thế</td>
+        </tr>
+        <tr>
+          <td><code>DelegatingHandler</code></td>
+          <td>Middleware pipeline phía client — thêm header, log, validate request</td>
+        </tr>
+        <tr>
+          <td>Polly Retry</td>
+          <td>Tự động retry khi gặp lỗi tạm thời, có thể chờ tăng dần</td>
+        </tr>
+        <tr>
+          <td><code>AddStandardResilienceHandler</code></td>
+          <td>.NET 8+ — cấu hình resilience toàn diện (retry + circuit breaker tích hợp)</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-19.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">19 · MVC &amp; Razor Pages — Filter Pipeline</div>
+      </a>
+      <a class="next" href="lesson-21.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">21 · Tạo Web API với Controllers</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

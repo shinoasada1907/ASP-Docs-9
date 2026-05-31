@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 25 — Configuration trong ASP.NET Core | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 25 — Configuration trong ASP.NET Core</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Cơ chế hoạt động của Configuration</a></li>
+      <li><a href="#s2">2. Đọc giá trị cấu hình</a></li>
+      <li><a href="#s3">3. Ghi đè theo thứ tự nguồn</a></li>
+      <li><a href="#s4">4. Strongly Typed Configuration (Options Pattern)</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 25</span>
+      <h1>Configuration trong ASP.NET Core</h1>
+      <p class="lead">Hệ thống cấu hình ứng dụng — cơ chế hoạt động theo mô hình provider, cách đọc giá trị bằng nhiều phương thức, thứ tự ưu tiên khi nhiều nguồn xung đột, và cách dùng Options pattern để truy cập cấu hình theo kiểu strongly typed.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Cơ chế hoạt động của Configuration</h2>
+      <p class="subvideo-meta">Bài 1 · <em>How Configuration Works</em></p>
+
+      <p><strong>Configuration</strong> (cấu hình) là tập hợp các giá trị dữ liệu điều chỉnh hành vi của ứng dụng mà không cần sửa code. Dữ liệu này có thể đến từ nhiều nguồn khác nhau: file JSON, biến môi trường, command-line arguments, user secrets, cơ sở dữ liệu…</p>
+
+      <h3>Mô hình provider</h3>
+      <p>ASP.NET Core thiết kế hệ thống cấu hình theo mô hình <strong>plug-in</strong>: một lớp trung tâm gọi là <code>ConfigurationManager</code> chịu trách nhiệm nạp và tổng hợp dữ liệu từ nhiều <strong>configuration provider</strong> (nhà cung cấp cấu hình). Mỗi provider đọc một loại nguồn và đổ dữ liệu vào <code>ConfigurationManager</code>. Ứng dụng chỉ cần truy vấn một nơi duy nhất — <code>ConfigurationManager</code> — thay vì phải biết nguồn dữ liệu đến từ đâu.</p>
+
+      <table class="tbl">
+        <tr><th>Provider mặc định</th><th>Nguồn dữ liệu</th></tr>
+        <tr><td><span class="tag">JSON</span> <code>appsettings.json</code></td><td>File JSON gốc, có trong mọi project</td></tr>
+        <tr><td><span class="tag">JSON</span> <code>appsettings.{Environment}.json</code></td><td>File JSON theo môi trường (Development, Production…)</td></tr>
+        <tr><td><span class="tag">Secrets</span> User Secrets</td><td>File bí mật cục bộ của nhà phát triển (không commit lên git)</td></tr>
+        <tr><td><span class="tag">ENV</span> Environment Variables</td><td>Biến môi trường của hệ điều hành hoặc cloud</td></tr>
+        <tr><td><span class="tag">CLI</span> Command-line Arguments</td><td>Tham số truyền khi chạy <code>dotnet run</code></td></tr>
+      </table>
+
+      <p>Khi bạn gọi <code>WebApplication.CreateBuilder(args)</code>, ASP.NET Core tự động đăng ký tất cả các provider mặc định trên vào <code>ConfigurationManager</code> theo đúng thứ tự đó. <code>ConfigurationManager</code> được đưa vào DI container, giúp toàn bộ ứng dụng có thể lấy cấu hình thông qua Dependency Injection.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "AllowedHosts": "*",
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=MyDb;Trusted_Connection=True;"
+  },
+  "DisplaySettings": {
+    "ShowDepartment": true,
+    "ShowEmployees": false,
+    "SubSettings": {
+      "SubSetting1": 1,
+      "SubSetting2": 10
+    }
+  }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.Development.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "DisplaySettings": {
+    "SubSettings": {
+      "SubSetting2": 5
+    }
+  }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Nếu muốn tuỳ chỉnh danh sách provider, bạn có thể xoá tất cả provider mặc định bằng <code>builder.Configuration.Sources.Clear()</code> rồi tự thêm từng provider theo ý muốn. Tuy nhiên với đa số dự án, danh sách mặc định là đủ.</p>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — tuỳ chỉnh provider (tuỳ chọn)</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Xoá tất cả provider mặc định rồi chỉ thêm provider JSON tự chọn
+builder.Configuration.Sources.Clear();
+builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+builder.Configuration.AddJsonFile(
+    $"appsettings.{builder.Environment.EnvironmentName}.json",
+    optional: true,
+    reloadOnChange: true);
+builder.Configuration.AddEnvironmentVariables();
+
+var app = builder.Build();
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Điểm mấu chốt:</strong> <code>ConfigurationManager</code> implement interface <code>IConfiguration</code>. Đây là interface mà ứng dụng dùng để truy cập giá trị cấu hình — không phụ thuộc vào nguồn cụ thể nào.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Đọc giá trị cấu hình</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Access Configuration Values</em></p>
+
+      <p>ASP.NET Core cung cấp nhiều cách để đọc giá trị từ <code>IConfiguration</code>. Bạn có thể truy cập cấu hình ở hai giai đoạn trong <code>Program.cs</code>: trước <code>builder.Build()</code> (dùng <code>builder.Configuration</code>) và sau <code>builder.Build()</code> (dùng <code>app.Configuration</code>). Ngoài ra bạn có thể inject <code>IConfiguration</code> vào bất kỳ service hay endpoint handler nào.</p>
+
+      <h3>Cách 1 — Indexer (dấu ngoặc vuông)</h3>
+      <p>Đơn giản nhất: truyền key dưới dạng string. Với key lồng nhau, dùng dấu <code>:</code> làm phân cách cấp.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Đọc trước Build() — dùng builder.Configuration
+string? connStr = builder.Configuration["ConnectionStrings:DefaultConnection"];
+
+// Đọc sau Build() — dùng app.Configuration
+bool showDept = bool.Parse(app.Configuration["DisplaySettings:ShowDepartment"] ?? "false");
+
+// Lồng nhiều cấp
+string? sub1 = app.Configuration["DisplaySettings:SubSettings:SubSetting1"];
+
+app.MapGet("/", () =&gt; $"ShowDepartment={showDept}");
+app.Run();</code></pre>
+      </div>
+
+      <h3>Cách 2 — GetValue&lt;T&gt;</h3>
+      <p><code>GetValue&lt;T&gt;</code> tự động convert kiểu dữ liệu, tránh phải parse thủ công. Tham số thứ hai là giá trị mặc định khi key không tồn tại.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>bool showDept = app.Configuration.GetValue&lt;bool&gt;("DisplaySettings:ShowDepartment", defaultValue: false);
+int sub1     = app.Configuration.GetValue&lt;int&gt;("DisplaySettings:SubSettings:SubSetting1", 0);</code></pre>
+      </div>
+
+      <h3>Cách 3 — GetSection</h3>
+      <p><code>GetSection("SectionName")</code> trả về một <code>IConfigurationSection</code> — bản thân nó cũng là <code>IConfiguration</code> nhưng có gốc từ section đó. Từ đây bạn có thể dùng tiếp indexer hoặc <code>GetValue</code> với key ngắn hơn.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var displaySection = app.Configuration.GetSection("DisplaySettings");
+
+bool showDept  = displaySection.GetValue&lt;bool&gt;("ShowDepartment");
+bool showEmp   = displaySection.GetValue&lt;bool&gt;("ShowEmployees");
+
+// Section lồng nhau
+var subSection = displaySection.GetSection("SubSettings");
+int sub2 = subSection.GetValue&lt;int&gt;("SubSetting2");</code></pre>
+      </div>
+
+      <h3>Cách 4 — GetConnectionString</h3>
+      <p>Phương thức tiện ích để đọc nhanh chuỗi kết nối trong mục <code>ConnectionStrings</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Tương đương: configuration["ConnectionStrings:DefaultConnection"]
+string? connStr = builder.Configuration.GetConnectionString("DefaultConnection");</code></pre>
+      </div>
+
+      <h3>Inject IConfiguration vào endpoint và service</h3>
+      <p>Trong Minimal API, bạn có thể khai báo <code>IConfiguration</code> trực tiếp trong tham số của endpoint handler. Trong Controller hay Razor Page, dùng constructor injection.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — Minimal API endpoint</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/info", (IConfiguration config) =&gt;
+{
+    bool showDept = config.GetValue&lt;bool&gt;("DisplaySettings:ShowDepartment");
+    bool showEmp  = config.GetValue&lt;bool&gt;("DisplaySettings:ShowEmployees");
+    return Results.Ok(new { ShowDepartment = showDept, ShowEmployees = showEmp });
+});</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">HomeController.cs — MVC Controller</span><span class="lang">csharp</span></div>
+        <pre><code>public class HomeController : Controller
+{
+    private readonly IConfiguration _config;
+
+    public HomeController(IConfiguration config)
+    {
+        _config = config;
+    }
+
+    public IActionResult Index()
+    {
+        bool showDept = _config.GetValue&lt;bool&gt;("DisplaySettings:ShowDepartment");
+        ViewBag.ShowDepartment = showDept;
+        return View();
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Dùng dấu <code>:</code> để phân cách các cấp key lồng nhau khi truy cập bằng indexer hoặc <code>GetValue</code>. Ví dụ: key <code>"DisplaySettings:SubSettings:SubSetting1"</code> tương ứng với JSON <code>{ "DisplaySettings": { "SubSettings": { "SubSetting1": 1 } } }</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Ghi đè theo thứ tự nguồn</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Configuration Values Overriding</em></p>
+
+      <p>Khi nhiều provider cùng cung cấp một key, provider nào được đăng ký <strong>sau</strong> sẽ có độ ưu tiên <strong>cao hơn</strong> và ghi đè giá trị của provider trước đó. Đây là nguyên tắc cốt lõi giúp bạn cấu hình môi trường linh hoạt mà không cần sửa code.</p>
+
+      <h3>Thứ tự ưu tiên mặc định (từ thấp đến cao)</h3>
+      <ol class="steps">
+        <li><strong>appsettings.json</strong> — giá trị gốc, cơ sở cho mọi môi trường.</li>
+        <li><strong>appsettings.{Environment}.json</strong> — ghi đè theo môi trường cụ thể (Development, Staging, Production…). Môi trường được xác định qua biến <code>ASPNETCORE_ENVIRONMENT</code> trong <code>launchSettings.json</code> hoặc hệ điều hành.</li>
+        <li><strong>User Secrets</strong> — chỉ kích hoạt trong môi trường <code>Development</code>; lưu thông tin nhạy cảm (mật khẩu, API key) trên máy local mà không commit lên source control.</li>
+        <li><strong>Environment Variables</strong> — ghi đè mọi file cấu hình; phù hợp cho production và CI/CD pipeline.</li>
+        <li><strong>Command-line Arguments</strong> — ưu tiên cao nhất; hữu ích để override tạm thời khi chạy thử.</li>
+      </ol>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Khi đặt biến môi trường cho key lồng nhau trên <strong>Windows</strong>, dùng dấu <code>__</code> (hai gạch dưới) thay vì <code>:</code> vì Windows không cho phép dấu hai chấm trong tên biến môi trường. Ví dụ: <code>DisplaySettings__SubSettings__SubSetting2=500</code>. Trên Linux/macOS, dùng <code>:</code> bình thường.</p>
+      </div>
+
+      <h3>Ví dụ minh hoạ</h3>
+      <p>Giả sử <code>appsettings.json</code> có <code>DisplaySettings:SubSettings:SubSetting2 = 1</code>, và <code>appsettings.Development.json</code> đặt giá trị đó là <code>10</code>. Khi chạy ở môi trường Development, ứng dụng sẽ đọc được <code>10</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "DisplaySettings": {
+    "ShowDepartment": true,
+    "SubSettings": {
+      "SubSetting2": 1
+    }
+  }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.Development.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "DisplaySettings": {
+    "SubSettings": {
+      "SubSetting2": 10
+    }
+  }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal — ghi đè bằng biến môi trường (Windows)</span><span class="lang">bash</span></div>
+        <pre><code># Đặt biến môi trường để ghi đè SubSetting2 thành 500
+$env:DisplaySettings__SubSettings__SubSetting2 = "500"
+dotnet run</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal — ghi đè bằng command-line argument</span><span class="lang">bash</span></div>
+        <pre><code>dotnet run --DisplaySettings:SubSettings:SubSetting2=999</code></pre>
+      </div>
+
+      <h3>Ứng dụng thực tế: bảo mật connection string</h3>
+      <p>Thay vì để username/password trong <code>appsettings.json</code> rồi commit lên git, hãy để <code>appsettings.json</code> chứa giá trị giả (placeholder), còn thông tin thật nằm trong biến môi trường hoặc User Secrets. Provider nào được nạp sau sẽ ghi đè, đảm bảo thông tin nhạy cảm không rò rỉ ra source control.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.json — chỉ có placeholder, an toàn khi commit</span><span class="lang">json</span></div>
+        <pre><code>{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=MyDb;User Id=DEV_USER;Password=DEV_PASS;"
+  }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal — biến môi trường production (ghi đè toàn bộ)</span><span class="lang">bash</span></div>
+        <pre><code>export ConnectionStrings__DefaultConnection="Server=prod-sql;Database=ProdDb;User Id=sa;Password=S3cur3!"</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Quy tắc vàng:</strong> thông tin nhạy cảm (mật khẩu, API key) <strong>không bao giờ</strong> được commit lên source control. Dùng User Secrets (local development) hoặc biến môi trường / Azure Key Vault (production) để cung cấp giá trị thực, nhờ vào cơ chế ghi đè theo thứ tự nguồn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Strongly Typed Configuration (Options Pattern)</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Strongly Typed Configuration Class</em></p>
+
+      <p>Việc đọc cấu hình bằng chuỗi key thủ công dễ dẫn đến lỗi typo và khó refactor. <strong>Options pattern</strong> (cấu hình strongly typed) giải quyết vấn đề này: bạn tạo một class C# có các property tương ứng với section trong <code>appsettings.json</code>, rồi bind class đó vào DI container. Từ đó, bất kỳ service nào cũng có thể inject class cấu hình trực tiếp mà không cần biết key string.</p>
+
+      <h3>Bước 1 — Tạo class cấu hình</h3>
+      <p>Property name của class phải khớp (case-insensitive) với key trong JSON. Không cần attribute hay kế thừa gì đặc biệt.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Settings/SubSettings.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace MyApp.Settings;
+
+public class SubSettings
+{
+    public int SubSetting1 { get; set; }
+    public int SubSetting2 { get; set; }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Settings/DisplaySettings.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace MyApp.Settings;
+
+public class DisplaySettings
+{
+    // Tên section trong appsettings.json — dùng nameof() để tránh magic string
+    public const string SectionName = "DisplaySettings";
+
+    public bool ShowDepartment { get; set; }
+    public bool ShowEmployees  { get; set; }
+
+    // Property lồng nhau — tương ứng với sub-object trong JSON
+    public SubSettings SubSettings { get; set; } = new();
+}</code></pre>
+      </div>
+
+      <h3>Bước 2 — Đăng ký vào DI với Configure&lt;T&gt;</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using MyApp.Settings;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Bind section "DisplaySettings" trong appsettings.json vào class DisplaySettings
+builder.Services.Configure&lt;DisplaySettings&gt;(
+    builder.Configuration.GetSection(DisplaySettings.SectionName));
+
+var app = builder.Build();
+
+app.MapGet("/", () =&gt; "Hello World!");
+
+// Endpoint sử dụng Options pattern
+app.MapGet("/settings", (IOptions&lt;DisplaySettings&gt; opts) =&gt;
+{
+    DisplaySettings s = opts.Value;
+    return Results.Ok(new
+    {
+        s.ShowDepartment,
+        s.ShowEmployees,
+        SubSetting1 = s.SubSettings.SubSetting1,
+        SubSetting2 = s.SubSettings.SubSetting2
+    });
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Bước 3 — Inject IOptions&lt;T&gt; hoặc IOptionsSnapshot&lt;T&gt;</h3>
+
+      <table class="tbl">
+        <tr><th>Interface</th><th>Lifecycle</th><th>Khi nào dùng</th></tr>
+        <tr>
+          <td><code>IOptions&lt;T&gt;</code></td>
+          <td>Singleton — đọc một lần lúc khởi động</td>
+          <td>Cấu hình không thay đổi trong suốt vòng đời ứng dụng</td>
+        </tr>
+        <tr>
+          <td><code>IOptionsSnapshot&lt;T&gt;</code></td>
+          <td>Scoped — đọc lại mỗi request</td>
+          <td>Cấu hình có thể thay đổi (reloadOnChange) và bạn muốn mỗi request dùng giá trị mới nhất</td>
+        </tr>
+        <tr>
+          <td><code>IOptionsMonitor&lt;T&gt;</code></td>
+          <td>Singleton — theo dõi thay đổi real-time</td>
+          <td>Background service cần phản ứng ngay khi cấu hình thay đổi (không cần restart)</td>
+        </tr>
+      </table>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Services/ReportService.cs — inject IOptions&lt;T&gt;</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.Extensions.Options;
+using MyApp.Settings;
+
+public class ReportService
+{
+    private readonly DisplaySettings _settings;
+
+    public ReportService(IOptions&lt;DisplaySettings&gt; options)
+    {
+        _settings = options.Value;
+    }
+
+    public string GetReportSummary()
+    {
+        var parts = new List&lt;string&gt;();
+        if (_settings.ShowDepartment) parts.Add("Department");
+        if (_settings.ShowEmployees)  parts.Add("Employees");
+        return parts.Count &gt; 0
+            ? $"Showing: {string.Join(", ", parts)}"
+            : "Nothing to show.";
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — đăng ký service và dùng IOptionsSnapshot</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.Configure&lt;DisplaySettings&gt;(
+    builder.Configuration.GetSection(DisplaySettings.SectionName));
+
+builder.Services.AddScoped&lt;ReportService&gt;();
+
+// IOptionsSnapshot&lt;T&gt; — đọc lại mỗi request (scoped)
+app.MapGet("/report", (IOptionsSnapshot&lt;DisplaySettings&gt; snap, ReportService svc) =&gt;
+{
+    DisplaySettings current = snap.Value;
+    return Results.Ok(new
+    {
+        Summary       = svc.GetReportSummary(),
+        SubSetting2   = current.SubSettings.SubSetting2
+    });
+});</code></pre>
+      </div>
+
+      <h3>Bind thủ công (không dùng DI)</h3>
+      <p>Nếu bạn cần đọc cấu hình strongly typed ngay trong <code>Program.cs</code> trước khi DI sẵn sàng, dùng phương thức <code>Bind</code> hoặc <code>Get&lt;T&gt;</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — bind thủ công</span><span class="lang">csharp</span></div>
+        <pre><code>// Cách 1: Bind vào instance
+var displaySettings = new DisplaySettings();
+builder.Configuration.GetSection(DisplaySettings.SectionName).Bind(displaySettings);
+
+// Cách 2: Get&lt;T&gt; — ngắn gọn hơn
+DisplaySettings? ds = builder.Configuration
+    .GetSection(DisplaySettings.SectionName)
+    .Get&lt;DisplaySettings&gt;();
+
+Console.WriteLine($"ShowDepartment = {displaySettings.ShowDepartment}");</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Ưu tiên dùng <code>IOptions&lt;T&gt;</code> thay vì <code>IConfiguration</code> khi inject vào service. Options pattern giúp code tường minh hơn, dễ unit test hơn (mock một class đơn giản thay vì mock <code>IConfiguration</code>), và loại bỏ hoàn toàn magic string.</p>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Tên property của class C# phải <strong>khớp chính xác</strong> (case-insensitive) với key trong JSON. Nếu tên không khớp, property sẽ giữ giá trị mặc định và không báo lỗi — đây là lỗi thầm lặng khó debug.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-24.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">24 · Entity Framework Core</div>
+      </a>
+      <a class="next" href="lesson-26.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">26 · Logging</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

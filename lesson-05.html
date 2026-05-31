@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 05 — Minimal API Model Binding &amp; Validation | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 05 — Minimal API Model Binding &amp; Validation</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Model Binding là gì</a></li>
+      <li><a href="#s2">2. Bind vào Route Values</a></li>
+      <li><a href="#s3">3. Bind vào Query String</a></li>
+      <li><a href="#s4">4. Bind vào HTTP Headers</a></li>
+      <li><a href="#s5">5. Nhóm tham số với AsParameters</a></li>
+      <li><a href="#s6">6. Bind mảng từ Query/Header</a></li>
+      <li><a href="#s7">7. Bind vào HTTP Body</a></li>
+      <li><a href="#s8">8. Custom Binding với BindAsync</a></li>
+      <li><a href="#s9">9. Thứ tự ưu tiên nguồn Binding</a></li>
+      <li><a href="#s10">10. Model Validation</a></li>
+      <li><a href="#s11">11. Custom Validation với ValidationAttribute</a></li>
+      <li><a href="#s12">12. Bài tập — Binding &amp; Validation</a></li>
+      <li><a href="#s13">13. Đáp án bài tập</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 05</span>
+      <h1>Minimal API — Model Binding &amp; Validation</h1>
+      <p class="lead">Tìm hiểu cách ASP.NET Core tự động trích xuất dữ liệu từ HTTP request vào tham số của endpoint handler (model binding), và cách xác thực dữ liệu đó trước khi đưa vào business logic (model validation).</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Model Binding là gì</h2>
+      <p class="subvideo-meta">Bài 1 · <em>What is Model Binding</em></p>
+
+      <p>Trước khi có model binding, để lấy dữ liệu từ một HTTP request, lập trình viên phải viết code thủ công: đọc route value từ <code>HttpContext.Request.RouteValues</code>, đọc query string từ <code>HttpContext.Request.Query</code>, đọc body bằng <code>StreamReader</code> rồi deserialize JSON... Mỗi endpoint lại phải lặp lại những đoạn code kỹ thuật này, khiến code phình to và khó tập trung vào business logic.</p>
+
+      <p><strong>Model binding</strong> là tính năng của ASP.NET Core giải quyết vấn đề đó: framework <em>tự động</em> trích xuất dữ liệu từ HTTP request và đưa thẳng vào các tham số của endpoint handler function, giúp developer chỉ cần khai báo tham số, không cần viết code trích xuất thủ công.</p>
+
+      <div class="callout key">
+        <p><strong>Định nghĩa chính thức:</strong> Model binding là quá trình trích xuất dữ liệu từ HTTP request và ánh xạ (map) chúng vào các tham số của endpoint handler.</p>
+      </div>
+
+      <h3>Các nguồn dữ liệu (Binding Sources)</h3>
+      <p>ASP.NET Core Minimal API hỗ trợ bốn nguồn dữ liệu chính trong HTTP request:</p>
+      <table class="tbl">
+        <tr><th>Nguồn</th><th>Ví dụ</th><th>Attribute</th></tr>
+        <tr><td>Route values</td><td><code>/employees/{id}</code></td><td><code>[FromRoute]</code></td></tr>
+        <tr><td>Query string</td><td><code>?id=1&amp;name=John</code></td><td><code>[FromQuery]</code></td></tr>
+        <tr><td>HTTP headers</td><td><code>Authorization: Bearer ...</code></td><td><code>[FromHeader]</code></td></tr>
+        <tr><td>Request body</td><td>JSON payload</td><td><code>[FromBody]</code></td></tr>
+      </table>
+
+      <h3>Model binding diễn ra khi nào?</h3>
+      <p>Trong pipeline xử lý request, model binding xảy ra <strong>sau routing</strong> (xác định endpoint cần gọi) và <strong>trước khi</strong> endpoint handler thực sự được thực thi. Framework nhìn vào danh sách tham số của handler, tìm giá trị tương ứng trong HTTP request, rồi truyền vào.</p>
+
+      <div class="callout note">
+        <p>Thuật ngữ thường dùng: ta nói "binding <em>tham số</em> vào <em>nguồn dữ liệu</em>". Về mặt dữ liệu, luồng chạy là từ HTTP request → tham số handler, nhưng về cách framework hoạt động: nó nhìn tham số trước, rồi đi tìm nguồn dữ liệu tương ứng trong request.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Bind vào Route Values</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Bind to Route Values</em></p>
+
+      <p>Route values là các đoạn giá trị được nhúng trực tiếp trong đường dẫn URL, ví dụ <code>/employees/42</code> — ở đây <code>42</code> là route value của tham số <code>id</code>.</p>
+
+      <h3>Implicit binding (ràng buộc ngầm định)</h3>
+      <p>Nếu tên tham số trong handler <strong>trùng khớp</strong> với tên segment trong route template, ASP.NET Core tự động bind mà không cần attribute:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/employees/{id:int}", (int id) =&gt;
+{
+    var employee = EmployeesRepository.GetEmployeeById(id);
+    return employee;
+});</code></pre>
+      </div>
+
+      <h3>Explicit binding với [FromRoute]</h3>
+      <p>Dùng <code>[FromRoute]</code> để chỉ rõ nguồn dữ liệu, hoặc khi tên tham số handler <em>khác</em> tên route segment:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Tên tham số khác tên route segment → dùng Name để ánh xạ
+app.MapGet("/employees/{id:int}", ([FromRoute(Name = "id")] int identityNumber) =&gt;
+{
+    var employee = EmployeesRepository.GetEmployeeById(identityNumber);
+    return employee;
+});</code></pre>
+      </div>
+
+      <h3>Route parameter tùy chọn (optional)</h3>
+      <p>Khi route segment là optional (có dấu <code>?</code>), tham số handler cũng phải là nullable:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Route: /employees/{id?}
+app.MapGet("/employees/{id:int?}", (int? id) =&gt;
+{
+    if (id.HasValue)
+        return EmployeesRepository.GetEmployeeById(id.Value);
+
+    return null;
+});</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p>Nếu kiểu dữ liệu của tham số không khớp với giá trị trong route (ví dụ route nhận chuỗi "abc" nhưng tham số là <code>int</code>), framework trả về <strong>HTTP 400 Bad Request</strong> — khác với routing constraint không khớp (trả về 404).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Bind vào Query String</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Bind to Query String</em></p>
+
+      <p>Query string là phần sau dấu <code>?</code> trong URL, ví dụ <code>/employees?id=2&amp;name=Jane</code>. Binding từ query string hoạt động theo cùng quy tắc với route values.</p>
+
+      <h3>Implicit binding</h3>
+      <p>Nếu tên tham số handler trùng với key trong query string, không cần attribute:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// GET /employees?id=2
+app.MapGet("/employees", (int? id) =&gt;
+{
+    if (id.HasValue)
+        return EmployeesRepository.GetEmployeeById(id.Value);
+
+    return null;
+});</code></pre>
+      </div>
+
+      <h3>Explicit binding với [FromQuery]</h3>
+      <p>Khi tên tham số handler khác key trong query string:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// GET /employees?id=2 → bind vào tham số identityNumber
+app.MapGet("/employees", ([FromQuery(Name = "id")] int? identityNumber) =&gt;
+{
+    if (identityNumber.HasValue)
+        return EmployeesRepository.GetEmployeeById(identityNumber.Value);
+
+    return null;
+});</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p>Query string về bản chất là <strong>tùy chọn</strong> (không bắt buộc phải có trong URL). Vì vậy hãy luôn khai báo tham số query string là nullable (<code>int?</code>, <code>string?</code>) để tránh HTTP 400 khi client không gửi key đó.</p>
+      </div>
+
+      <h3>Ưu tiên route values hơn query string</h3>
+      <p>Nếu cùng một tên tham số tồn tại cả trong route values và query string, <strong>route values được ưu tiên</strong>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// GET /employees/1?id=3 → id = 1 (từ route, không phải query)
+app.MapGet("/employees/{id:int}", (int id) =&gt;
+{
+    return EmployeesRepository.GetEmployeeById(id);
+});</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Bind vào HTTP Headers</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Bind to HTTP Headers</em></p>
+
+      <p>Binding từ HTTP header <strong>bắt buộc</strong> phải dùng attribute <code>[FromHeader]</code> — không có implicit binding như route values hay query string. Điều này hợp lý vì header thường mang thông tin hệ thống (Authorization, Content-Type...), không phải data của người dùng.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Client gửi header: id: 2
+app.MapGet("/employees", ([FromHeader] int id) =&gt;
+{
+    return EmployeesRepository.GetEmployeeById(id);
+});</code></pre>
+      </div>
+
+      <h3>Ánh xạ tên header khác tên tham số</h3>
+      <p>Tên HTTP header thường dùng kebab-case (ví dụ <code>employee-id</code>) trong khi tên tham số C# dùng camelCase. Dùng <code>Name</code> để ánh xạ:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Client gửi header: identity: 3
+app.MapGet("/employees", ([FromHeader(Name = "identity")] int id) =&gt;
+{
+    return EmployeesRepository.GetEmployeeById(id);
+});</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p>Không thể test binding từ header bằng trình duyệt vì trình duyệt không cho phép tùy chỉnh request header tùy ý. Dùng công cụ như <strong>Postman</strong> hoặc <code>curl</code> để kiểm tra.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Nhóm tham số với AsParameters</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Use AsParameters to Group Parameters</em></p>
+
+      <p>Khi một endpoint cần nhận nhiều tham số từ các nguồn khác nhau (route, query string, header...), danh sách tham số của handler sẽ rất dài và khó đọc. Attribute <code>[AsParameters]</code> cho phép nhóm các tham số vào một <strong>class hoặc struct</strong>, giữ handler gọn gàng hơn.</p>
+
+      <h3>Không dùng AsParameters — handler nhiều tham số</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Khó đọc khi có nhiều nguồn khác nhau
+app.MapGet("/employees/{id:int}",
+    ([FromRoute] int id,
+     [FromQuery] string name,
+     [FromHeader] string position) =&gt;
+{
+    var employee = EmployeesRepository.GetEmployeeById(id);
+    employee.Name = name;
+    employee.Position = position;
+    return employee;
+});</code></pre>
+      </div>
+
+      <h3>Dùng AsParameters — gom vào struct/class</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/employees/{id:int}", ([AsParameters] GetEmployeeParams p) =&gt;
+{
+    var employee = EmployeesRepository.GetEmployeeById(p.Id);
+    employee.Name = p.Name;
+    employee.Position = p.Position;
+    return employee;
+});
+
+// Có thể dùng struct, class, hoặc record — đều hoạt động
+struct GetEmployeeParams
+{
+    [FromRoute]
+    public int Id { get; set; }
+
+    [FromQuery]
+    public string Name { get; set; }
+
+    [FromHeader]
+    public string Position { get; set; }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><code>[AsParameters]</code> "trải phẳng" (flatten) các thuộc tính của type thành các tham số riêng biệt về mặt binding. Viết <code>[AsParameters] GetEmployeeParams p</code> tương đương hoàn toàn với việc khai báo từng thuộc tính riêng lẻ. Bạn có thể dùng <strong>class, struct, hoặc record</strong> — tùy ý.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Bind mảng từ Query String hoặc Header</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Bind Arrays to Query Strings or Headers</em></p>
+
+      <p>ASP.NET Core hỗ trợ binding một <strong>mảng (array)</strong> từ query string hoặc header. Client gửi nhiều giá trị với cùng một key, framework tự động gom lại thành array.</p>
+
+      <h3>Bind mảng từ Query String</h3>
+      <p>Client gửi: <code>GET /employees?id=1&amp;id=2&amp;id=3</code></p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Tên tham số trùng key → implicit binding
+app.MapGet("/employees", (int[] id) =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return employees.Where(x =&gt; id.Contains(x.Id)).ToList();
+});
+
+// Tên tham số khác key → dùng [FromQuery(Name = ...)]
+app.MapGet("/employees", ([FromQuery(Name = "id")] int[] ids) =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return employees.Where(x =&gt; ids.Contains(x.Id)).ToList();
+});</code></pre>
+      </div>
+
+      <h3>Bind mảng từ Header</h3>
+      <p>Client gửi nhiều header cùng tên: <code>id: 1</code>, <code>id: 2</code>, <code>id: 3</code></p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/employees", ([FromHeader(Name = "id")] int[] ids) =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return employees.Where(x =&gt; ids.Contains(x.Id)).ToList();
+});</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p>Binding mảng <strong>không phù hợp</strong> với route values vì route template không thiết kế cho nhiều segment cùng loại. Hãy dùng query string hoặc header khi cần truyền danh sách ID.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Bind vào HTTP Body</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Bind to HTTP Body</em></p>
+
+      <p>Khi tham số của handler là một <strong>complex type</strong> (class/record, không phải primitive), ASP.NET Core Minimal API mặc định bind từ <strong>HTTP request body</strong> — giả định body chứa JSON và tự động deserialize.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Employee là complex type → tự động bind từ body (JSON)
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null || employee.Id &lt;= 0)
+        return "Employee is not provided or is not valid.";
+
+    EmployeesRepository.AddEmployee(employee);
+    return "Employee added successfully.";
+});</code></pre>
+      </div>
+
+      <h3>Giới hạn của binding từ body trong Minimal API</h3>
+      <table class="tbl">
+        <tr><th>Giới hạn</th><th>Chi tiết</th></tr>
+        <tr>
+          <td>Chỉ hỗ trợ JSON</td>
+          <td>Minimal API chỉ đọc body dạng <code>application/json</code>. Không thể cấu hình để dùng XML hay format khác (khác với MVC/Razor Pages).</td>
+        </tr>
+        <tr>
+          <td>Chỉ một complex type duy nhất</td>
+          <td>Không thể bind nhiều complex type khác nhau từ cùng một body.</td>
+        </tr>
+        <tr>
+          <td>Chỉ dùng cho POST/PUT/PATCH</td>
+          <td>Không nên đặt body trong GET hay DELETE request — server sẽ không xử lý đúng.</td>
+        </tr>
+      </table>
+
+      <div class="callout warn">
+        <p>Nếu body không phải JSON hợp lệ hoặc không có body, framework trả về <strong>HTTP 400 Bad Request</strong> với thông báo lỗi deserialization.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Custom Binding với BindAsync</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Custom Binding with BindAsync Method</em></p>
+
+      <p>Đôi khi bạn muốn một complex type được bind từ nguồn <em>tùy chỉnh</em> — ví dụ lấy <code>Id</code> từ query string và <code>Name</code> từ header thay vì từ body. Để làm điều này, định nghĩa một phương thức tĩnh <code>BindAsync</code> <strong>theo quy ước</strong> (convention-based, không cần implement interface) ngay trong class đó.</p>
+
+      <h3>Quy ước BindAsync</h3>
+      <p>Phương thức phải có signature chính xác sau:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>class Person
+{
+    public int Id { get; set; }
+    public string? Name { get; set; }
+
+    // Convention: static, trả về ValueTask&lt;T?&gt;, nhận HttpContext
+    public static ValueTask&lt;Person?&gt; BindAsync(HttpContext context)
+    {
+        var idStr = context.Request.Query["id"];
+        var nameStr = context.Request.Headers["name"];
+
+        if (int.TryParse(idStr, out var id))
+        {
+            return new ValueTask&lt;Person?&gt;(new Person { Id = id, Name = nameStr });
+        }
+
+        return new ValueTask&lt;Person?&gt;(Task.FromResult&lt;Person?&gt;(null));
+    }
+}
+
+// Sử dụng trong endpoint — không cần attribute gì thêm
+app.MapGet("/people", (Person? p) =&gt;
+{
+    return $"Id is {p?.Id}; Name is {p?.Name}";
+});</code></pre>
+      </div>
+
+      <h3>Cách hoạt động</h3>
+      <ol class="steps">
+        <li>Khi framework thấy tham số có kiểu định nghĩa <code>BindAsync</code>, nó <strong>ưu tiên gọi</strong> phương thức đó.</li>
+        <li>Mọi logic binding khác (body, query string mặc định...) đều bị bỏ qua.</li>
+        <li>Bên trong <code>BindAsync</code>, bạn có toàn quyền truy cập <code>HttpContext</code> — lấy từ bất kỳ phần nào của request.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><code>ValueTask&lt;T&gt;</code> là phiên bản hiệu năng cao hơn <code>Task&lt;T&gt;</code> (tránh cấp phát heap khi kết quả đã sẵn sàng đồng bộ). Dùng <code>new ValueTask&lt;T?&gt;(value)</code> để trả về kết quả đồng bộ, hoặc <code>new ValueTask&lt;T?&gt;(someTask)</code> để wrap một task bất đồng bộ.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Thứ tự ưu tiên nguồn Binding</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Binding Source Priorities</em></p>
+
+      <p>Khi một tham số có thể được bind từ nhiều nguồn khác nhau, ASP.NET Core tuân theo thứ tự ưu tiên sau (từ cao đến thấp):</p>
+
+      <table class="tbl">
+        <tr><th>Ưu tiên</th><th>Điều kiện</th><th>Ví dụ</th></tr>
+        <tr>
+          <td>1</td>
+          <td><strong>Explicit attribute</strong> được khai báo rõ ràng</td>
+          <td><code>[FromBody]</code>, <code>[FromQuery]</code>, <code>[FromHeader]</code>, <code>[FromRoute]</code></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Complex type có <strong>BindAsync</strong> được định nghĩa</td>
+          <td>Class có <code>static ValueTask&lt;T?&gt; BindAsync(...)</code></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Primitive type → bind vào <strong>route value</strong> (nếu route có segment cùng tên)</td>
+          <td><code>(int id)</code> khi route là <code>/employees/{id}</code></td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Primitive type → bind vào <strong>query string</strong> (nếu key trùng tên)</td>
+          <td><code>(int id)</code> khi URL là <code>?id=2</code></td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>Array/collection → bind từ <strong>query string hoặc header</strong></td>
+          <td><code>(int[] ids)</code></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>Complex type (không có BindAsync) → bind từ <strong>body</strong></td>
+          <td><code>(Employee employee)</code></td>
+        </tr>
+      </table>
+
+      <div class="callout warn">
+        <p>Nếu bạn chỉ định explicit attribute (ưu tiên 1) nhưng nguồn đó không có dữ liệu, framework <em>không fallback</em> sang nguồn khác — kết quả sẽ là <code>null</code> hoặc HTTP 400. Hãy dùng ưu tiên này khi debug binding không hoạt động như kỳ vọng.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Model Validation</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Model Validation</em></p>
+
+      <p>Sau khi model binding hoàn thành, dữ liệu đã có mặt trong tham số handler — nhưng <em>chưa chắc đã hợp lệ</em>. Người dùng có thể gửi giá trị thiếu, sai định dạng, ngoài phạm vi cho phép, hoặc thậm chí dữ liệu độc hại. <strong>Model validation</strong> là bước xác thực tính hợp lệ của dữ liệu đã được bind.</p>
+
+      <h3>Data Annotations — xác thực khai báo trên model</h3>
+      <p>C# cung cấp namespace <code>System.ComponentModel.DataAnnotations</code> với nhiều attribute sẵn có để annotate trực tiếp lên thuộc tính của class:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+public class Employee
+{
+    public int Id { get; set; }
+
+    [Required]
+    public string Name { get; set; }
+
+    public string? Position { get; set; }
+
+    [Required]
+    [Range(50000, 200000)]
+    public double Salary { get; set; }
+}</code></pre>
+      </div>
+
+      <h3>Kích hoạt validation trong Minimal API</h3>
+      <p>Khác với MVC/Razor Pages (validation tự động), Minimal API yêu cầu cài thêm package NuGet và gọi <code>.WithParameterValidation()</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package MinimalApis.Extensions</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    EmployeesRepository.AddEmployee(employee);
+    return "Employee is added successfully.";
+}).WithParameterValidation(); // &lt;-- bật validation
+
+app.Run();</code></pre>
+      </div>
+
+      <p>Khi validation thất bại, framework tự động trả về <strong>HTTP 400 Bad Request</strong> với danh sách lỗi chi tiết — không cần viết code kiểm tra thủ công trong handler.</p>
+
+      <h3>Các Data Annotation attribute phổ biến</h3>
+      <table class="tbl">
+        <tr><th>Attribute</th><th>Mục đích</th></tr>
+        <tr><td><code>[Required]</code></td><td>Bắt buộc phải có giá trị (không được null/empty)</td></tr>
+        <tr><td><code>[Range(min, max)]</code></td><td>Giá trị số phải trong khoảng [min, max]</td></tr>
+        <tr><td><code>[StringLength(max, MinimumLength = min)]</code></td><td>Độ dài chuỗi trong khoảng [min, max]</td></tr>
+        <tr><td><code>[EmailAddress]</code></td><td>Định dạng email hợp lệ</td></tr>
+        <tr><td><code>[Phone]</code></td><td>Định dạng số điện thoại</td></tr>
+        <tr><td><code>[RegularExpression(pattern)]</code></td><td>Khớp với regex pattern</td></tr>
+        <tr><td><code>[Compare(nameof(Prop))]</code></td><td>Giá trị phải bằng thuộc tính khác (dùng cho confirm password)</td></tr>
+        <tr><td><code>[CreditCard]</code></td><td>Số thẻ tín dụng hợp lệ</td></tr>
+        <tr><td><code>[Url]</code></td><td>Định dạng URL hợp lệ</td></tr>
+      </table>
+
+      <div class="callout note">
+        <p>Data Annotations là tính năng thuần C# (<code>System.ComponentModel.DataAnnotations</code>), không phải của ASP.NET Core. Vì vậy chúng có thể dùng trong bất kỳ loại ứng dụng .NET nào, không chỉ web.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 11 ============ -->
+    <section class="section" id="s11">
+      <h2><span class="num">11</span> Custom Validation với ValidationAttribute</h2>
+      <p class="subvideo-meta">Bài 11 · <em>Custom Model Validation with ValidationAttribute</em></p>
+
+      <p>Data Annotations tích hợp sẵn xử lý tốt các rule đơn giản trên từng thuộc tính riêng lẻ. Khi cần xác thực logic phức tạp hơn — ví dụ <em>lương phải lớn hơn 100,000 NẾU chức vụ là Manager</em> (cần đọc cả hai thuộc tính cùng lúc) — bạn cần tạo <strong>custom ValidationAttribute</strong>.</p>
+
+      <h3>Tạo custom ValidationAttribute</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">EmployeeSalaryValidationAttribute.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+public class EmployeeSalaryValidationAttribute : ValidationAttribute
+{
+    protected override ValidationResult? IsValid(
+        object? value,
+        ValidationContext validationContext)
+    {
+        // validationContext.ObjectInstance là object đang được validate
+        var employee = validationContext.ObjectInstance as Employee;
+
+        if (employee is not null
+            &amp;&amp; !string.IsNullOrEmpty(employee.Position)
+            &amp;&amp; employee.Position.Equals("Manager", StringComparison.OrdinalIgnoreCase)
+            &amp;&amp; employee.Salary &lt; 100_000)
+        {
+            return new ValidationResult(
+                "A manager's salary must be greater than or equal to 100,000.");
+        }
+
+        return ValidationResult.Success;
+    }
+}</code></pre>
+      </div>
+
+      <h3>Áp dụng lên model</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class Employee
+{
+    public int Id { get; set; }
+
+    [Required]
+    public string Name { get; set; }
+
+    [Required]
+    public string Position { get; set; }
+
+    [Required]
+    [Range(50_000, 200_000)]
+    [EmployeeSalaryValidation] // &lt;-- custom attribute
+    public double Salary { get; set; }
+}
+
+// Trong endpoint phải có .WithParameterValidation()
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    EmployeesRepository.AddEmployee(employee);
+    return "Employee is added successfully.";
+}).WithParameterValidation();</code></pre>
+      </div>
+
+      <ol class="steps">
+        <li>Tạo class kế thừa <code>ValidationAttribute</code> (từ <code>System.ComponentModel.DataAnnotations</code>).</li>
+        <li>Override phương thức <code>IsValid(object? value, ValidationContext context)</code>.</li>
+        <li>Dùng <code>context.ObjectInstance</code> để truy cập toàn bộ object — từ đó đọc nhiều thuộc tính cùng lúc.</li>
+        <li>Trả về <code>ValidationResult.Success</code> nếu hợp lệ, hoặc <code>new ValidationResult("error message")</code> nếu không hợp lệ.</li>
+        <li>Áp dụng attribute lên thuộc tính phù hợp trong model.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p>Custom <code>ValidationAttribute</code> hoạt động tốt cho logic phụ thuộc nhiều thuộc tính trong cùng một object. Nếu cần logic phức tạp hơn hoặc muốn tách biệt hoàn toàn khỏi model class, hãy cân nhắc thư viện <strong>FluentValidation</strong>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 12 ============ -->
+    <section class="section" id="s12">
+      <h2><span class="num">12</span> Bài tập — Binding &amp; Validation thông tin đăng ký</h2>
+      <p class="subvideo-meta">Bài 12 · <em>Assignment 4 — Binding &amp; Validating Registration Info</em></p>
+
+      <p>Bài tập này giúp bạn thực hành tổng hợp model binding và model validation trong một tình huống thực tế: xử lý thông tin đăng ký tài khoản.</p>
+
+      <h3>Mô tả bài toán</h3>
+      <p>Thông tin đăng ký gồm ba trường: <code>Email</code>, <code>Password</code>, <code>ConfirmPassword</code>.</p>
+
+      <h3>Yêu cầu validation</h3>
+      <ul>
+        <li>Cả ba trường đều là <strong>bắt buộc</strong>.</li>
+        <li><code>Email</code> phải có định dạng email hợp lệ.</li>
+        <li><code>Password</code> phải có ít nhất <strong>6 ký tự</strong>.</li>
+        <li><code>ConfirmPassword</code> phải <strong>khớp</strong> với <code>Password</code>.</li>
+      </ul>
+
+      <h3>Yêu cầu endpoint</h3>
+      <p>Xây dựng hai phiên bản endpoint <code>/register</code>:</p>
+      <ul>
+        <li><strong>Phiên bản 1 (GET):</strong> Thông tin đăng ký đến từ <em>query string</em>.</li>
+        <li><strong>Phiên bản 2 (POST):</strong> Thông tin đăng ký đến từ <em>request body</em>.</li>
+      </ul>
+
+      <div class="callout key">
+        <p><strong>Câu hỏi thêm:</strong> Sau khi hoàn thành, hãy so sánh hai phiên bản — phiên bản nào phù hợp hơn cho chức năng đăng ký thực tế? Tại sao?</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 13 ============ -->
+    <section class="section" id="s13">
+      <h2><span class="num">13</span> Đáp án bài tập</h2>
+      <p class="subvideo-meta">Bài 13 · <em>Assignment 4 (Answer) — Binding &amp; Validating Registration Info</em></p>
+
+      <h3>Model Registration với Data Annotations</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+public class Registration
+{
+    [Required]
+    [EmailAddress(ErrorMessage = "Invalid email address.")]
+    public string? Email { get; set; }
+
+    [Required]
+    [StringLength(100, MinimumLength = 6,
+        ErrorMessage = "Password must be at least 6 characters.")]
+    public string? Password { get; set; }
+
+    [Required(ErrorMessage = "Confirm password is required.")]
+    [Compare(nameof(Password), ErrorMessage = "Passwords do not match.")]
+    public string? ConfirmPassword { get; set; }
+
+    // BindAsync: cho phép lấy dữ liệu từ query string thay vì body
+    public static ValueTask&lt;Registration?&gt; BindAsync(HttpContext context)
+    {
+        var email = context.Request.Query["email"].ToString();
+        var pw    = context.Request.Query["password"].ToString();
+        var cpw   = context.Request.Query["confirmpassword"].ToString();
+
+        return new ValueTask&lt;Registration?&gt;(new Registration
+        {
+            Email           = email,
+            Password        = pw,
+            ConfirmPassword = cpw
+        });
+    }
+}</code></pre>
+      </div>
+
+      <h3>Hai phiên bản endpoint</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Phiên bản 1: GET — dữ liệu từ query string (qua BindAsync)
+// Ví dụ: GET /register?email=a@b.com&amp;password=abc123&amp;confirmpassword=abc123
+app.MapGet("/register", (Registration? reg) =&gt;
+{
+    return $"User {reg?.Email} registered successfully.";
+}).WithParameterValidation();
+
+// Phiên bản 2: POST — dữ liệu từ body (JSON), bỏ qua BindAsync bằng [FromBody]
+app.MapPost("/register", ([FromBody] Registration reg) =&gt;
+{
+    return $"User {reg?.Email} registered successfully.";
+}).WithParameterValidation();
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Phiên bản nào tốt hơn?</h3>
+      <div class="callout key">
+        <p><strong>POST với body là lựa chọn đúng</strong> cho chức năng đăng ký. Khi gửi qua query string, mật khẩu xuất hiện trực tiếp trên URL — browser lưu vào lịch sử duyệt web, server log, và các proxy trung gian đều có thể thấy. Gửi qua request body (HTTPS) đảm bảo dữ liệu nhạy cảm như mật khẩu được mã hóa và không lưu trong lịch sử.</p>
+      </div>
+
+      <h3>Test với Postman</h3>
+      <p>Để kiểm tra phiên bản POST, gửi request body dạng JSON:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">POST /register — body</span><span class="lang">json</span></div>
+        <pre><code>{
+  "email": "user@example.com",
+  "password": "abc123",
+  "confirmPassword": "abc123"
+}</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Tình huống</th><th>Kết quả</th></tr>
+        <tr><td>Email không hợp lệ (thiếu @)</td><td>400 — Invalid email address.</td></tr>
+        <tr><td>Password ít hơn 6 ký tự</td><td>400 — Password must be at least 6 characters.</td></tr>
+        <tr><td>ConfirmPassword không khớp</td><td>400 — Passwords do not match.</td></tr>
+        <tr><td>Tất cả hợp lệ</td><td>200 — User registered successfully.</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-04.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">04 · Minimal API — Routing</div>
+      </a>
+      <a class="next" href="lesson-06.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">06 · Minimal API — Producing Results</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 15 — Course Project: Quản lý Nhân viên với Razor Pages | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 15 — Course Project: Quản lý Nhân viên với Razor Pages</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Khởi động dự án</a></li>
+      <li><a href="#s2">2. Cập nhật model Employee &amp; Repository</a></li>
+      <li><a href="#s3">3. Thêm hỗ trợ Razor Pages</a></li>
+      <li><a href="#s4">4. Trang danh sách nhân viên</a></li>
+      <li><a href="#s5">5. ViewComponent &amp; Partial View</a></li>
+      <li><a href="#s6">6. Thêm tính năng tìm kiếm động</a></li>
+      <li><a href="#s7">7. Trang nhân viên theo phòng ban</a></li>
+      <li><a href="#s8">8. Tạo nhân viên (ViewModel &amp; Antiforgery)</a></li>
+      <li><a href="#s9">9. Trang báo lỗi (Error Razor Page)</a></li>
+      <li><a href="#s10">10. Cập nhật nhân viên (Edit)</a></li>
+      <li><a href="#s11">11. Xóa nhân viên</a></li>
+      <li><a href="#s12">12. Xác nhận xóa bằng JavaScript</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 15</span>
+      <h1>Course Project — Quản lý Nhân viên với Razor Pages</h1>
+      <p class="lead">Dự án thực hành xây dựng ứng dụng quản lý nhân viên hoàn chỉnh (full CRUD) bằng Razor Pages — từ thiết lập cấu trúc dự án, tổ chức model/repository, đến tích hợp ViewComponent, Partial View, tìm kiếm động bằng JavaScript và xác nhận xóa an toàn.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Khởi động dự án</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Start working on the project</em></p>
+
+      <p>Dự án thực hành này xây dựng trên nền tảng dự án <strong>Department</strong> đã có từ các chương trước. Mục tiêu là bổ sung đầy đủ tính năng CRUD (Create, Read, Update, Delete) cho <strong>nhân viên (Employee)</strong> bằng cách sử dụng <strong>Razor Pages</strong> — trong khi phần Department vẫn dùng MVC Controller truyền thống.</p>
+
+      <h3>Cấu trúc giải pháp (Solution)</h3>
+      <p>Sau khi thiết lập, cấu trúc project trông như sau:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Cấu trúc thư mục</span><span class="lang">text</span></div>
+        <pre><code>WebApp/
+├── Controllers/
+│   ├── DepartmentsController.cs   ← MVC (chương trước)
+│   └── HomeController.cs
+├── Model/
+│   ├── Employee.cs
+│   ├── EmployeesRepository.cs
+│   ├── Department.cs
+│   └── DepartmentsRepository.cs
+├── Pages/
+│   └── Employees/
+│       ├── Index.cshtml + .cshtml.cs
+│       ├── Create.cshtml + .cshtml.cs
+│       ├── Edit.cshtml + .cshtml.cs
+│       ├── DepartmentEmployees.cshtml + .cshtml.cs
+│       ├── _EmployeeListItem.cshtml  (Partial)
+│       └── _EmployeeDetail.cshtml   (Partial)
+├── Pages/Shared/
+│   └── Components/EmployeeList/
+│       ├── EmployeeListViewComponent.cs
+│       └── Default.cshtml
+├── ViewModels/
+│   └── EmployeeViewModel.cs
+├── Helpers/
+│   └── ModelStateHelper.cs
+└── Program.cs</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Chiến lược thiết kế:</strong> MVC Controller xử lý Department, Razor Pages xử lý Employee. Cả hai đều dùng chung <code>_Layout.cshtml</code>, các Partial View và ViewComponent — đây là điểm mạnh của ASP.NET Core: cho phép pha trộn nhiều mô hình UI trong cùng một ứng dụng.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Cập nhật model Employee &amp; Repository</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Updated Employee and Repository classes</em></p>
+
+      <p>Trước khi bắt đầu xây dựng các trang Razor Pages, cần cập nhật class <code>Employee</code> để phản ánh mối quan hệ với <code>Department</code>, và bổ sung đầy đủ phương thức CRUD vào <code>EmployeesRepository</code>.</p>
+
+      <h3>Model Employee — quan hệ với Department</h3>
+      <p>Class <code>Employee</code> có thêm hai thuộc tính mới: <code>DepartmentId</code> (khóa ngoại) và <code>Department</code> (navigation property — giúp truy cập thông tin phòng ban liên quan mà không cần join thủ công).</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/Employee.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+namespace WebApp.Models
+{
+    public class Employee
+    {
+        public int Id { get; set; }
+
+        [Required]
+        public string? Name { get; set; }
+
+        [Required]
+        public string? Position { get; set; }
+
+        public double? Salary { get; set; }
+
+        // Khóa ngoại liên kết tới Department
+        public int DepartmentId { get; set; }
+
+        // Navigation property — truy cập thông tin phòng ban liên quan
+        public Department? Department { get; set; }
+
+        public Employee() { }
+
+        public Employee(int id, string name, string position, double salary, int departmentId)
+        {
+            Id = id;
+            Name = name;
+            Position = position;
+            Salary = salary;
+            DepartmentId = departmentId;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>EmployeesRepository — In-memory CRUD</h3>
+      <p>Repository sử dụng danh sách tĩnh (<code>static List&lt;Employee&gt;</code>) để lưu dữ liệu trong bộ nhớ, cung cấp đầy đủ các phương thức: lấy danh sách (có lọc), lấy theo ID, thêm, cập nhật, và xóa.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/EmployeesRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public static class EmployeesRepository
+    {
+        private static List&lt;Employee&gt; _employees = new List&lt;Employee&gt;
+        {
+            new Employee(1, "John Doe",       "Engineer",    60000, 1),
+            new Employee(2, "Jane Smith",     "Manager",     75000, 1),
+            new Employee(3, "Sam Brown",      "Technician",  50000, 1),
+            new Employee(4, "Alice Johnson",  "Analyst",     55000, 2),
+            new Employee(5, "Bob Lee",        "Developer",   65000, 2),
+            // ... thêm nhân viên khác
+        };
+
+        public static List&lt;Employee&gt; GetEmployees(string? filter = null, int? departmentId = null)
+        {
+            // Gắn Department navigation property cho mỗi nhân viên
+            foreach (Employee emp in _employees)
+                emp.Department = DepartmentsRepository.GetDepartmentById(emp.DepartmentId);
+
+            if (departmentId.HasValue)
+                return _employees.Where(x =&gt; x.DepartmentId == departmentId.Value).ToList();
+
+            if (!string.IsNullOrWhiteSpace(filter))
+                return _employees.Where(x =&gt; x.Name is not null
+                    &amp;&amp; x.Name.ToLower().Contains(filter.ToLower())).ToList();
+
+            return _employees;
+        }
+
+        public static Employee? GetEmployeeById(int id)
+            =&gt; _employees.FirstOrDefault(x =&gt; x.Id == id);
+
+        public static void AddEmployee(Employee? employee)
+        {
+            if (employee is not null)
+            {
+                employee.Id = _employees.Max(x =&gt; x.Id) + 1;
+                _employees.Add(employee);
+            }
+        }
+
+        public static bool UpdateEmployee(Employee? employee)
+        {
+            if (employee is not null)
+            {
+                var emp = _employees.FirstOrDefault(x =&gt; x.Id == employee.Id);
+                if (emp is not null)
+                {
+                    emp.Name = employee.Name;
+                    emp.Position = employee.Position;
+                    emp.Salary = employee.Salary;
+                    emp.DepartmentId = employee.DepartmentId;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public static bool DeleteEmployee(Employee? employee)
+        {
+            if (employee is not null)
+            {
+                _employees.Remove(employee);
+                return true;
+            }
+            return false;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Trong dự án thực tế, repository sẽ sử dụng Entity Framework Core để tương tác với database. Ở đây dùng danh sách tĩnh trong bộ nhớ để tập trung vào việc học Razor Pages mà không phụ thuộc database.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Thêm hỗ trợ Razor Pages</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Add Razor Pages support</em></p>
+
+      <p>Để Razor Pages hoạt động trong một ứng dụng ASP.NET Core đã có MVC, cần thực hiện hai thay đổi trong <code>Program.cs</code>: đăng ký dịch vụ Razor Pages và ánh xạ endpoint Razor Pages vào pipeline.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký cả MVC Controllers+Views lẫn Razor Pages
+builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages();              // ← THÊM MỚI
+
+var app = builder.Build();
+
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    // Endpoint cho MVC Controller (Department)
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}"
+    );
+
+    // Endpoint cho Razor Pages (Employee)
+    endpoints.MapRazorPages();                 // ← THÊM MỚI
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Cấu hình _ViewStart.cshtml cho Razor Pages</h3>
+      <p>Tạo file <code>Pages/_ViewStart.cshtml</code> để chỉ định layout mặc định cho tất cả Razor Pages. Đây là file tương đương với <code>Views/_ViewStart.cshtml</code> trong MVC — và cả hai có thể trỏ đến cùng một file <code>_Layout.cshtml</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/_ViewStart.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    Layout = "_Layout";
+}</code></pre>
+      </div>
+
+      <h3>Cấu hình _ViewImports.cshtml cho Razor Pages</h3>
+      <p>File <code>Pages/_ViewImports.cshtml</code> khai báo namespace dùng chung cho tất cả Razor Pages, tránh phải lặp lại <code>@using</code> ở mỗi trang.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/_ViewImports.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@using WebApp.Models
+@using WebApp.ViewModels</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Dùng chung Layout:</strong> File <code>_Layout.cshtml</code> trong <code>Views/Shared/</code> có thể được dùng chung cho cả MVC lẫn Razor Pages. ASP.NET Core tìm kiếm layout theo thứ tự: thư mục hiện tại → <code>Shared/</code> → <code>Pages/Shared/</code> → <code>Views/Shared/</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Trang danh sách nhân viên</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Implement the Employee list page</em></p>
+
+      <p>Trang <code>Pages/Employees/Index.cshtml</code> hiển thị danh sách nhân viên dưới dạng bảng. URL mặc định của trang này là <code>/Employees</code>. Trang bao gồm một thanh tìm kiếm và nút <em>Add</em> để thêm nhân viên mới.</p>
+
+      <h3>Razor Page — Index.cshtml</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page
+@model WebApp.Pages.Employees.IndexModel
+
+@section title_section
+{
+    &lt;h3&gt;Employees&lt;/h3&gt;
+}
+
+@await Html.PartialAsync("_SearchBar")
+
+&lt;table class="table table-striped"&gt;
+    &lt;thead&gt;
+        &lt;tr&gt;
+            &lt;th&gt;Name&lt;/th&gt;
+            &lt;th&gt;Position&lt;/th&gt;
+            &lt;th&gt;Salary&lt;/th&gt;
+            &lt;th&gt;Department&lt;/th&gt;
+            &lt;th&gt;&lt;/th&gt;
+        &lt;/tr&gt;
+    &lt;/thead&gt;
+    &lt;tbody id="employee-list"&gt;
+        @* Nội dung sẽ được tải động bằng JavaScript *@
+    &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;br /&gt;
+&lt;a class="btn btn-primary" href='/employees/create'&gt;Add&lt;/a&gt;
+
+@section scripts
+{
+    &lt;script&gt;
+        loadEmployees('');
+        // Gắn sự kiện cho nút Search
+    &lt;/script&gt;
+}</code></pre>
+      </div>
+
+      <h3>Page Model — Index.cshtml.cs</h3>
+      <p>Page Model kế thừa <code>PageModel</code>. Phương thức <code>OnGet()</code> xử lý GET request, còn <code>OnGetSearchEmployeeResult()</code> là Named Handler — được gọi khi có query string <code>?handler=SearchEmployeeResult</code> — trả về kết quả ViewComponent dạng HTML fragment.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Index.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using WebApp.Models;
+
+namespace WebApp.Pages.Employees
+{
+    public class IndexModel : PageModel
+    {
+        public List&lt;Employee&gt;? Employees { get; set; }
+
+        public void OnGet()
+        {
+            // Không tải trực tiếp — danh sách được tải bằng AJAX
+        }
+
+        // Named Handler: GET /employees?filter=...&amp;handler=SearchEmployeeResult
+        public IActionResult OnGetSearchEmployeeResult(string? filter)
+        {
+            return ViewComponent("EmployeeList", new { filter });
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Named Handler trong Razor Pages:</strong> Thay vì dùng nhiều Action Method như MVC, Razor Pages dùng quy ước đặt tên <code>OnGet[HandlerName]</code> / <code>OnPost[HandlerName]</code>. Gọi bằng query string <code>?handler=HandlerName</code> hoặc attribute <code>asp-page-handler</code> trên form/link.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> ViewComponent &amp; Partial View cho danh sách nhân viên</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Componentize with ViewComponent and PartialView</em></p>
+
+      <p>Để tái sử dụng và hỗ trợ render động (AJAX), danh sách nhân viên được tách thành một <strong>ViewComponent</strong> và một <strong>Partial View</strong>. Cách tổ chức này giống hệt những gì đã làm với Department trong MVC — điểm khác biệt là thư mục đặt ViewComponent nằm trong <code>Pages/Shared/</code> thay vì <code>Views/Shared/</code>.</p>
+
+      <h3>Cấu trúc thư mục ViewComponent</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Cấu trúc thư mục</span><span class="lang">text</span></div>
+        <pre><code>Pages/
+└── Shared/
+    └── Components/
+        └── EmployeeList/
+            ├── EmployeeListViewComponent.cs   ← Logic
+            └── Default.cshtml                 ← View của component</code></pre>
+      </div>
+
+      <h3>EmployeeListViewComponent</h3>
+      <p>ViewComponent kế thừa <code>ViewComponent</code>, phương thức <code>Invoke()</code> nhận các tham số lọc và trả về View với danh sách nhân viên đã lọc.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Shared/Components/EmployeeList/EmployeeListViewComponent.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Pages.Shared.Components.EmployeeList
+{
+    public class EmployeeListViewComponent : ViewComponent
+    {
+        public IViewComponentResult Invoke(string? filter, int? departmentId)
+        {
+            return View(EmployeesRepository.GetEmployees(filter, departmentId));
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Default.cshtml — View của ViewComponent</h3>
+      <p>View của ViewComponent nhận <code>List&lt;Employee&gt;</code> làm model, sau đó lặp qua từng nhân viên và render Partial View <code>_EmployeeListItem</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Shared/Components/EmployeeList/Default.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model List&lt;Employee&gt;
+
+@if (Model is not null &amp;&amp; Model.Count &gt; 0)
+{
+    foreach (var emp in Model)
+    {
+        @await Html.PartialAsync("_EmployeeListItem", emp)
+    }
+}</code></pre>
+      </div>
+
+      <h3>Partial View _EmployeeListItem.cshtml</h3>
+      <p>Partial View render một dòng (<code>&lt;tr&gt;</code>) trong bảng nhân viên. Link đến department và link Edit được nhúng trực tiếp vào từng hàng.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/_EmployeeListItem.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Employee
+
+@if (Model is not null)
+{
+    &lt;tr&gt;
+        &lt;td&gt;@Model.Name&lt;/td&gt;
+        &lt;td&gt;@Model.Position&lt;/td&gt;
+        &lt;td&gt;@Model.Salary&lt;/td&gt;
+        &lt;td&gt;
+            &lt;a class="btn btn-link"
+               href="/departments/details/@Model.DepartmentId"&gt;
+               @Model.Department?.Name
+            &lt;/a&gt;
+        &lt;/td&gt;
+        &lt;td&gt;
+            &lt;a class="btn btn-link" href="/employees/edit/@Model.Id"&gt;Edit&lt;/a&gt;
+        &lt;/td&gt;
+    &lt;/tr&gt;
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>Partial View vs ViewComponent:</strong> Partial View phù hợp khi chỉ cần render một đoạn HTML đơn giản từ model có sẵn. ViewComponent phù hợp khi cần logic riêng (truy vấn dữ liệu, lọc, xử lý) trước khi render — đây là lý do <code>EmployeeList</code> được triển khai dưới dạng ViewComponent.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Thêm tính năng tìm kiếm động</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Add interactivity</em></p>
+
+      <p>Sau khi tách danh sách nhân viên thành ViewComponent, thanh tìm kiếm cần được kết nối lại để hoạt động: khi người dùng nhấn nút Search, JavaScript sẽ gọi Named Handler <code>OnGetSearchEmployeeResult</code> qua <code>fetch()</code>, nhận về HTML fragment và cập nhật phần <code>&lt;tbody&gt;</code> mà không tải lại toàn bộ trang.</p>
+
+      <h3>Vấn đề với Section và Script trong Layout</h3>
+      <p>Khi đặt JavaScript vào <code>@section scripts</code>, script này được render trong <code>_Layout.cshtml</code> sau khi trang đã load xong. Đây là thực hành đúng để đảm bảo tất cả DOM element đã tồn tại trước khi script chạy.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Index.cshtml — phần scripts</span><span class="lang">razor</span></div>
+        <pre><code>@section scripts
+{
+    &lt;script&gt;
+        // Tải danh sách khi trang khởi động
+        loadEmployees('');
+
+        // Gắn sự kiện click cho nút Search
+        document.querySelector("#search-button").addEventListener("click", async () =&gt; {
+            var filter = document.querySelector("#search-filter").value;
+            loadEmployees(filter);
+        });
+
+        // Hàm gọi Named Handler và cập nhật tbody
+        async function loadEmployees(filter) {
+            var response = await fetch(`/employees?filter=${filter}&amp;handler=SearchEmployeeResult`);
+            var html = await response.text();
+            document.querySelector("#employee-list").innerHTML = html;
+        }
+    &lt;/script&gt;
+}</code></pre>
+      </div>
+
+      <h3>Luồng hoạt động tìm kiếm</h3>
+      <ol class="steps">
+        <li>Trang load lần đầu → JavaScript gọi <code>loadEmployees('')</code> → fetch <code>/employees?filter=&amp;handler=SearchEmployeeResult</code>.</li>
+        <li>Server nhận request GET với <code>handler=SearchEmployeeResult</code> → gọi <code>OnGetSearchEmployeeResult(filter)</code>.</li>
+        <li>Named Handler trả về <code>ViewComponent("EmployeeList", new { filter })</code> — chỉ là HTML của các <code>&lt;tr&gt;</code>.</li>
+        <li>JavaScript lấy HTML fragment và đặt vào <code>#employee-list</code> (tbody).</li>
+        <li>Người dùng nhập từ khóa, nhấn Search → lặp lại từ bước 1 với <code>filter</code> mới.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Pattern AJAX + ViewComponent:</strong> Đây là pattern rất phổ biến trong ASP.NET Core — thay vì tải lại toàn bộ trang, chỉ render một phần nhỏ (fragment) từ server và cập nhật DOM. Pattern này không cần framework frontend nặng như React/Angular.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Trang nhân viên theo phòng ban</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Implement Department Employees page</em></p>
+
+      <p>Trang <code>DepartmentEmployees</code> hiển thị tất cả nhân viên thuộc một phòng ban cụ thể. Khi người dùng xem trang chi tiết Department, có thể nhấn link để xem danh sách nhân viên của phòng ban đó. URL có dạng <code>/Employees/DepartmentEmployees/{departmentId}</code>.</p>
+
+      <h3>Razor Page</h3>
+      <p>Directive <code>@page "{departmentId:int}"</code> định nghĩa route parameter — giá trị <code>departmentId</code> được lấy từ URL. Trang dùng <code>@await Component.InvokeAsync</code> để render ViewComponent với <code>departmentId</code> được truyền vào.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/DepartmentEmployees.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page "{departmentId:int}"
+@model WebApp.Pages.Employees.DepartmentEmployeesModel
+
+@section title_section
+{
+    &lt;h3&gt;Employees of Department: @Model.DepartmentName&lt;/h3&gt;
+}
+
+&lt;table class="table table-striped"&gt;
+    &lt;thead&gt;
+        &lt;tr&gt;
+            &lt;th&gt;Name&lt;/th&gt;
+            &lt;th&gt;Position&lt;/th&gt;
+            &lt;th&gt;Salary&lt;/th&gt;
+            &lt;th&gt;Department&lt;/th&gt;
+            &lt;th&gt;&lt;/th&gt;
+        &lt;/tr&gt;
+    &lt;/thead&gt;
+    &lt;tbody id="employee-list"&gt;
+        @await Component.InvokeAsync("EmployeeList",
+            new { filter = "", departmentId = Model.DepartmentId })
+    &lt;/tbody&gt;
+&lt;/table&gt;</code></pre>
+      </div>
+
+      <h3>Page Model</h3>
+      <p>Thuộc tính <code>DepartmentId</code> được đánh dấu <code>[BindProperty(SupportsGet = true)]</code> để nhận giá trị từ route parameter. <code>OnGet()</code> dùng <code>DepartmentId</code> để tra cứu tên phòng ban.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/DepartmentEmployees.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using WebApp.Models;
+
+namespace WebApp.Pages.Employees
+{
+    public class DepartmentEmployeesModel : PageModel
+    {
+        public string? DepartmentName { get; set; }
+
+        // SupportsGet = true cho phép bind từ GET request (route/query string)
+        [BindProperty(SupportsGet = true)]
+        public int? DepartmentId { get; set; }
+
+        public void OnGet()
+        {
+            if (DepartmentId.HasValue)
+            {
+                var department = DepartmentsRepository.GetDepartmentById(DepartmentId.Value);
+                DepartmentName = department?.Name;
+            }
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>[BindProperty(SupportsGet = true)]:</strong> Mặc định, <code>[BindProperty]</code> chỉ hoạt động với POST. Thêm <code>SupportsGet = true</code> để binding cũng hoạt động với GET request — hữu ích khi cần nhận tham số từ URL (route hoặc query string) vào thuộc tính của Page Model.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Tạo nhân viên — ViewModel &amp; Antiforgery Token</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Create employees (ViewModel &amp; Antiforgery Token)</em></p>
+
+      <p>Trang Create và Edit nhân viên dùng chung một Partial View <code>_EmployeeDetail.cshtml</code> chứa form nhập liệu. Để truyền cả <code>Employee</code> lẫn danh sách <code>Departments</code> (cho dropdown), cần một <strong>ViewModel</strong>.</p>
+
+      <h3>EmployeeViewModel</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">ViewModels/EmployeeViewModel.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApp.Models;
+
+namespace WebApp.ViewModels
+{
+    public class EmployeeViewModel
+    {
+        public Employee? Employee { get; set; }
+        public List&lt;Department&gt;? Departments { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Partial View _EmployeeDetail.cshtml — Form dùng chung</h3>
+      <p>Partial View này dùng <code>ViewBag.Action</code> (được set ở trang cha) để phân biệt giữa chế độ Create và Edit: khi Edit, thêm hidden field chứa <code>Employee.Id</code>; khi Create, dropdown Department mặc định chọn "Please Select".</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/_EmployeeDetail.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model EmployeeViewModel
+
+@if (Model is not null &amp;&amp; Model.Employee is not null)
+{
+    &lt;form method="post"&gt;
+        @Html.AntiForgeryToken()
+
+        @* Hidden field chỉ cần khi Edit *@
+        @if (ViewBag.Action == "edit")
+        {
+            &lt;input type="hidden" name="Employee.Id" value="@Model.Employee.Id" /&gt;
+        }
+
+        &lt;div class="row mb-3"&gt;
+            &lt;div class="col-2"&gt;&lt;label class="col-form-label"&gt;Name&lt;/label&gt;&lt;/div&gt;
+            &lt;div class="col-6"&gt;
+                &lt;input type="text" name="Employee.Name"
+                       value="@Model.Employee.Name" class="form-control" /&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class="row mb-3"&gt;
+            &lt;div class="col-2"&gt;&lt;label class="col-form-label"&gt;Position&lt;/label&gt;&lt;/div&gt;
+            &lt;div class="col-6"&gt;
+                &lt;input type="text" name="Employee.Position"
+                       value="@Model.Employee.Position" class="form-control" /&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class="row mb-3"&gt;
+            &lt;div class="col-2"&gt;&lt;label class="col-form-label"&gt;Salary&lt;/label&gt;&lt;/div&gt;
+            &lt;div class="col-6"&gt;
+                &lt;input type="number" name="Employee.Salary"
+                       value="@Model.Employee.Salary" class="form-control" /&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class="row mb-3"&gt;
+            &lt;div class="col-2"&gt;&lt;label class="col-form-label"&gt;Department&lt;/label&gt;&lt;/div&gt;
+            &lt;div class="col-6"&gt;
+                &lt;select name="Employee.DepartmentId" class="form-control"&gt;
+                    @if (Model.Departments is not null)
+                    {
+                        @if (ViewBag.Action == "create")
+                        {
+                            &lt;option selected value="0"&gt;-- Please Select --&lt;/option&gt;
+                        }
+                        else
+                        {
+                            &lt;option value="0"&gt;-- Please Select --&lt;/option&gt;
+                        }
+                        foreach (var department in Model.Departments)
+                        {
+                            if (ViewBag.Action == "edit" &amp;&amp; department.Id == Model.Employee.DepartmentId)
+                            {
+                                &lt;option selected value="@department.Id"&gt;@department.Name&lt;/option&gt;
+                            }
+                            else
+                            {
+                                &lt;option value="@department.Id"&gt;@department.Name&lt;/option&gt;
+                            }
+                        }
+                    }
+                &lt;/select&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class="row mb-3"&gt;
+            &lt;div class="col-2"&gt;
+                &lt;button type="submit" class="btn btn-primary"&gt;Save&lt;/button&gt;
+                &amp;nbsp;&amp;nbsp;
+                &lt;a href="/employees" class="btn btn-primary"&gt;Cancel&lt;/a&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+    &lt;/form&gt;
+}</code></pre>
+      </div>
+
+      <h3>Trang Create.cshtml &amp; CreateModel</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Create.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page
+@model WebApp.Pages.Employees.CreateModel
+@{
+    ViewBag.Action = "create";
+}
+
+@section title_section {
+    &lt;h3&gt;Add Employee&lt;/h3&gt;
+}
+
+@await Html.PartialAsync("_EmployeeDetail", Model.EmployeeViewModel)</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Create.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using WebApp.Helpers;
+using WebApp.Models;
+using WebApp.ViewModels;
+
+namespace WebApp.Pages.Employees
+{
+    public class CreateModel : PageModel
+    {
+        // [BindProperty] cho phép binding dữ liệu POST vào thuộc tính này
+        [BindProperty]
+        public EmployeeViewModel? EmployeeViewModel { get; set; }
+
+        public void OnGet()
+        {
+            EmployeeViewModel = new EmployeeViewModel
+            {
+                Employee = new Employee(),
+                Departments = DepartmentsRepository.GetDepartments()
+            };
+        }
+
+        public IActionResult OnPost()
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelStateHelper.GetErrors(ModelState);
+                return RedirectToPage("/Error", new { errors });
+            }
+
+            if (EmployeeViewModel?.Employee is not null)
+                EmployeesRepository.AddEmployee(EmployeeViewModel.Employee);
+
+            return RedirectToPage("Index");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Antiforgery Token:</strong> <code>@Html.AntiForgeryToken()</code> tự động sinh một hidden field chứa token bảo mật. Khi form được submit, ASP.NET Core kiểm tra token này — nếu không khớp (hoặc thiếu), request bị từ chối với lỗi 400. Điều này ngăn chặn tấn công CSRF (Cross-Site Request Forgery). Razor Pages tự động xác thực antiforgery token mà không cần cấu hình thêm.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Trang báo lỗi (Error Razor Page)</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Error razor page</em></p>
+
+      <p>Khi validation thất bại trong Create hoặc Edit, ứng dụng chuyển hướng người dùng đến trang <code>/Error</code> kèm danh sách thông báo lỗi. Trang Error là một Razor Page đặt tại <code>Pages/Error.cshtml</code>.</p>
+
+      <h3>Helper trích xuất lỗi từ ModelState</h3>
+      <p><code>ModelStateHelper</code> duyệt qua <code>ModelStateDictionary</code> và gom tất cả lỗi thành <code>List&lt;string&gt;</code> để truyền qua redirect.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Helpers/ModelStateHelper.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.ModelBinding;
+
+namespace WebApp.Helpers
+{
+    public static class ModelStateHelper
+    {
+        public static List&lt;string&gt; GetErrors(ModelStateDictionary modelState)
+        {
+            var errorMessages = new List&lt;string&gt;();
+            foreach (var value in modelState.Values)
+                foreach (var error in value.Errors)
+                    errorMessages.Add(error.ErrorMessage);
+            return errorMessages;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Error.cshtml &amp; ErrorModel</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Error.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page
+@model WebApp.Pages.ErrorModel
+
+&lt;h1 style="color:red"&gt;Errors:&lt;/h1&gt;
+&lt;ul&gt;
+    @if (Model?.Errors is not null &amp;&amp; Model.Errors.Count &gt; 0)
+    {
+        foreach (var errorMessage in Model.Errors)
+        {
+            &lt;li&gt;@errorMessage&lt;/li&gt;
+        }
+    }
+&lt;/ul&gt;</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Error.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace WebApp.Pages
+{
+    public class ErrorModel : PageModel
+    {
+        public List&lt;string&gt;? Errors { get; set; }
+
+        public void OnGet(List&lt;string&gt; errors)
+        {
+            Errors = errors ?? new List&lt;string&gt;();
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Cách redirect kèm danh sách lỗi</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Trong CreateModel.OnPost() hoặc EditModel.OnPost()</span><span class="lang">csharp</span></div>
+        <pre><code>if (!ModelState.IsValid)
+{
+    var errors = ModelStateHelper.GetErrors(ModelState);
+    // Truyền List&lt;string&gt; qua route values — ASP.NET Core serialize thành query string
+    return RedirectToPage("/Error", new { errors });
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Khi redirect kèm danh sách lỗi, ASP.NET Core serialize <code>List&lt;string&gt;</code> thành nhiều query string parameter cùng tên: <code>?errors=Lỗi+1&amp;errors=Lỗi+2</code>. Page Model nhận lại bằng tham số <code>List&lt;string&gt; errors</code> trong <code>OnGet()</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Cập nhật nhân viên (Edit)</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Update employee</em></p>
+
+      <p>Trang Edit rất giống trang Create — đều dùng Partial View <code>_EmployeeDetail</code>, nhưng có thêm một số điểm khác biệt: nhận <code>id</code> từ route URL, tải dữ liệu nhân viên hiện tại để điền sẵn vào form, và có thêm phần xóa nhân viên (sẽ đề cập ở bài 11).</p>
+
+      <h3>Edit.cshtml</h3>
+      <p>Directive <code>@page "{id:int}"</code> yêu cầu route parameter <code>id</code> kiểu số nguyên — URL có dạng <code>/Employees/Edit/5</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@page "{id:int}"
+@model WebApp.Pages.Employees.EditModel
+@{
+    ViewBag.Action = "edit";
+}
+
+@section title_section {
+    &lt;h3&gt;Edit Employee&lt;/h3&gt;
+}
+
+@* Dùng chung form với Create *@
+@await Html.PartialAsync("_EmployeeDetail", Model.EmployeeViewModel)</code></pre>
+      </div>
+
+      <h3>EditModel — OnGet &amp; OnPost</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using WebApp.Helpers;
+using WebApp.Models;
+using WebApp.ViewModels;
+
+namespace WebApp.Pages.Employees
+{
+    public class EditModel : PageModel
+    {
+        [BindProperty]
+        public EmployeeViewModel? EmployeeViewModel { get; set; }
+
+        // id được nhận từ route parameter "{id:int}"
+        public void OnGet(int id)
+        {
+            EmployeeViewModel = new EmployeeViewModel
+            {
+                Employee    = EmployeesRepository.GetEmployeeById(id),
+                Departments = DepartmentsRepository.GetDepartments()
+            };
+        }
+
+        public IActionResult OnPost()
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelStateHelper.GetErrors(ModelState);
+                return RedirectToPage("/Error", new { errors });
+            }
+
+            if (EmployeeViewModel?.Employee is not null)
+                EmployeesRepository.UpdateEmployee(EmployeeViewModel.Employee);
+
+            return RedirectToPage("Index");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Dùng chung Partial View giữa Create và Edit:</strong> Bằng cách set <code>ViewBag.Action = "create"</code> hoặc <code>"edit"</code> ở trang cha, Partial View <code>_EmployeeDetail</code> biết cần hiển thị dropdown nào đang được chọn, và có cần hidden field chứa <code>Id</code> hay không. Đây là kỹ thuật tái sử dụng form hiệu quả mà không cần tạo hai Partial View riêng biệt.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 11 ============ -->
+    <section class="section" id="s11">
+      <h2><span class="num">11</span> Xóa nhân viên</h2>
+      <p class="subvideo-meta">Bài 11 · <em>Delete employee</em></p>
+
+      <p>Chức năng xóa nhân viên được tích hợp trực tiếp trong trang Edit. Thay vì tạo một trang riêng, một form DELETE được đặt bên dưới form Edit — khi người dùng nhấn nút Delete, form này được submit đến Named Handler <code>OnPostDeleteEmplopyee</code>.</p>
+
+      <h3>Form Delete trong Edit.cshtml</h3>
+      <p>Form Delete cần thuộc tính <code>action</code> trỏ đến đúng Named Handler. Lưu ý cú pháp: <code>?handler=DeleteEmplopyee</code> (đúng với tên method <code>OnPostDeleteEmplopyee</code>).</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml — phần Delete form</span><span class="lang">razor</span></div>
+        <pre><code>@* Form riêng cho chức năng Delete — tách biệt với form Edit *@
+&lt;form name="deleteEmployheeForm"
+      method="post"
+      action="/employees/edit/@Model.EmployeeViewModel.Employee.Id?handler=DeleteEmplopyee"&gt;
+    @Html.AntiForgeryToken()
+    &lt;button type="submit" id="delete-employee" class="btn btn-danger"&gt;Delete&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <h3>Named Handler xóa trong EditModel</h3>
+      <p>Named Handler <code>OnPostDeleteEmplopyee</code> nhận <code>id</code> từ route, tìm nhân viên, xóa và redirect về trang danh sách. Nếu không tìm thấy nhân viên, redirect đến trang Error.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs — OnPostDeleteEmplopyee</span><span class="lang">csharp</span></div>
+        <pre><code>// Named Handler: POST /employees/edit/{id}?handler=DeleteEmplopyee
+public IActionResult OnPostDeleteEmplopyee(int id)
+{
+    var employee = EmployeesRepository.GetEmployeeById(id);
+    if (employee == null)
+    {
+        ModelState.AddModelError("id", "Employee not found");
+        var errors = ModelStateHelper.GetErrors(ModelState);
+        return RedirectToPage("/Error", new { errors });
+    }
+
+    EmployeesRepository.DeleteEmployee(employee);
+    return RedirectToPage("Index");
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>Tại sao dùng POST thay vì GET để xóa?</strong> Theo nguyên tắc HTTP, GET không được phép có tác dụng phụ (side effect) như xóa dữ liệu. Nếu dùng link GET để xóa, các crawler/bot và trình duyệt prefetch có thể vô tình xóa dữ liệu. Luôn dùng POST (hoặc DELETE) cho các thao tác thay đổi trạng thái.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 12 ============ -->
+    <section class="section" id="s12">
+      <h2><span class="num">12</span> Xác nhận xóa bằng JavaScript</h2>
+      <p class="subvideo-meta">Bài 12 · <em>Delete confirmation with JavaScript</em></p>
+
+      <p>Xóa nhân viên là thao tác không thể hoàn tác. Để tránh người dùng lỡ tay xóa, một hộp thoại xác nhận JavaScript (<code>confirm()</code>) được hiển thị khi nhấn nút Delete. Chỉ khi người dùng xác nhận, form mới thực sự được submit.</p>
+
+      <h3>Script xác nhận xóa</h3>
+      <p>Script lắng nghe sự kiện <code>click</code> trên nút Delete, ngăn hành vi submit mặc định (<code>event.preventDefault()</code>), hiển thị hộp thoại <code>confirm()</code> với tên nhân viên, và chỉ submit form khi người dùng xác nhận.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml — @section scripts</span><span class="lang">razor</span></div>
+        <pre><code>@section scripts
+{
+    &lt;script&gt;
+        document.querySelector("#delete-employee").addEventListener("click", (event) =&gt; {
+            // Ngăn form submit ngay lập tức
+            event.preventDefault();
+
+            // Lấy tên nhân viên từ server-side model (render lúc tải trang)
+            const employeeName = '@Model.EmployeeViewModel.Employee.Name';
+
+            // Hiển thị hộp thoại xác nhận
+            const userConfirmation = confirm(
+                `Are you sure you want to delete the employee: ${employeeName}`
+            );
+
+            // Chỉ submit nếu người dùng nhấn OK
+            if (userConfirmation) {
+                document.forms["deleteEmployheeForm"].submit();
+            }
+        });
+    &lt;/script&gt;
+}</code></pre>
+      </div>
+
+      <h3>Luồng hoạt động xóa có xác nhận</h3>
+      <ol class="steps">
+        <li>Người dùng nhấn nút <strong>Delete</strong> → JavaScript bắt sự kiện <code>click</code>, gọi <code>event.preventDefault()</code> — form chưa submit.</li>
+        <li>Hộp thoại <code>confirm()</code> hiện ra với tên nhân viên.</li>
+        <li>Nếu người dùng nhấn <strong>Cancel</strong> → <code>userConfirmation = false</code>, không làm gì thêm.</li>
+        <li>Nếu người dùng nhấn <strong>OK</strong> → <code>document.forms["deleteEmployheeForm"].submit()</code> gửi POST request đến <code>OnPostDeleteEmplopyee</code>.</li>
+        <li>Server xóa nhân viên và redirect về <code>/Employees</code>.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Nhúng giá trị Razor vào JavaScript:</strong> Cú pháp <code>const employeeName = '@Model.EmployeeViewModel.Employee.Name'</code> cho phép nhúng giá trị C# vào chuỗi JavaScript. Razor render giá trị này phía server khi tạo HTML, trình duyệt nhận được chuỗi JavaScript đã có giá trị thật. Lưu ý: cần escape nếu tên nhân viên có dấu nháy đơn.</p>
+      </div>
+
+      <h3>Tổng kết dự án — Full CRUD hoàn chỉnh</h3>
+      <table class="tbl">
+        <tr><th>Chức năng</th><th>URL</th><th>Page / Handler</th><th>HTTP Method</th></tr>
+        <tr><td>Danh sách nhân viên</td><td><code>/Employees</code></td><td><code>Index / OnGet</code></td><td>GET</td></tr>
+        <tr><td>Tìm kiếm (AJAX)</td><td><code>/Employees?handler=SearchEmployeeResult</code></td><td><code>Index / OnGetSearchEmployeeResult</code></td><td>GET</td></tr>
+        <tr><td>Nhân viên theo phòng ban</td><td><code>/Employees/DepartmentEmployees/{id}</code></td><td><code>DepartmentEmployees / OnGet</code></td><td>GET</td></tr>
+        <tr><td>Thêm nhân viên (form)</td><td><code>/Employees/Create</code></td><td><code>Create / OnGet</code></td><td>GET</td></tr>
+        <tr><td>Thêm nhân viên (lưu)</td><td><code>/Employees/Create</code></td><td><code>Create / OnPost</code></td><td>POST</td></tr>
+        <tr><td>Sửa nhân viên (form)</td><td><code>/Employees/Edit/{id}</code></td><td><code>Edit / OnGet</code></td><td>GET</td></tr>
+        <tr><td>Sửa nhân viên (lưu)</td><td><code>/Employees/Edit/{id}</code></td><td><code>Edit / OnPost</code></td><td>POST</td></tr>
+        <tr><td>Xóa nhân viên</td><td><code>/Employees/Edit/{id}?handler=DeleteEmplopyee</code></td><td><code>Edit / OnPostDeleteEmplopyee</code></td><td>POST</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-14.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">14 · Razor Pages</div>
+      </a>
+      <a class="next" href="lesson-16.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">16 · Tag Helpers</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

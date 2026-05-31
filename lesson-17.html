@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 17 — MVC &amp; Razor Pages — Dependency Injection | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 17 — MVC &amp; Razor Pages — Dependency Injection</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Chuẩn bị: tách interface &amp; chuyển repository về instance</a></li>
+      <li><a href="#s2">2. Constructor Injection trong Controller, PageModel &amp; ViewComponent</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 17</span>
+      <h1>MVC &amp; Razor Pages — Dependency Injection</h1>
+      <p class="lead">Constructor injection trong controller và page model, view injection (@inject). Học cách đăng ký service vào DI container và để ASP.NET Core tự động tiêm phụ thuộc khi khởi tạo controller, Razor Page model và ViewComponent.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Chuẩn bị: tách interface &amp; chuyển repository về instance</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Constructor Injection 1 — Preparing Repositories</em></p>
+
+      <p>Trước khi áp dụng Dependency Injection (DI), các repository trong dự án dùng <strong>phương thức static</strong>
+        — nghĩa là dữ liệu và logic được gọi trực tiếp mà không qua instance. DI yêu cầu chúng ta làm việc với
+        <strong>interface</strong> và <strong>đối tượng instance</strong>, do đó bước đầu tiên là tái cấu trúc repository.</p>
+
+      <h3>Tại sao cần interface?</h3>
+      <p>DI container của ASP.NET Core hoạt động theo nguyên tắc <em>ánh xạ interface → implementation</em>.
+        Khi một class khai báo phụ thuộc vào <code>IDepartmentsRepository</code>, container sẽ tra cứu xem
+        interface đó được đăng ký với implementation nào, sau đó tạo instance và truyền vào. Điều này giúp
+        code phụ thuộc vào <em>hợp đồng (contract)</em> thay vì implementation cụ thể, dễ dàng thay thế
+        hoặc mock khi viết unit test.</p>
+
+      <h3>Định nghĩa interface cho repository</h3>
+      <p>Visual Studio hỗ trợ tính năng <em>Extract Interface</em> (nhấn <kbd>Ctrl+.</kbd> trên tên class → <em>Extract interface</em>)
+        để tạo interface tự động. Kết quả cuối cùng như sau:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/IDepartmentsRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public interface IDepartmentsRepository
+    {
+        void AddDepartment(Department? Department);
+        bool DeleteDepartment(Department? Department);
+        Department? GetDepartmentById(int id);
+        List&lt;Department&gt; GetDepartments(string? filter = null);
+        bool UpdateDepartment(Department? Department);
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/IEmployeesRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public interface IEmployeesRepository
+    {
+        void AddEmployee(Employee? employee);
+        bool DeleteEmployee(Employee? employee);
+        Employee? GetEmployeeById(int id);
+        List&lt;Employee&gt; GetEmployees(string? filter = null, int? departmentId = null);
+        bool UpdateEmployee(Employee? employee);
+    }
+}</code></pre>
+      </div>
+
+      <h3>Implementation: DepartmentsRepository</h3>
+      <p>Sau khi có interface, class <code>DepartmentsRepository</code> implement nó. Lưu ý các phương thức
+        <strong>không còn là static</strong> — chúng là instance method bình thường:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/DepartmentsRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public class DepartmentsRepository : IDepartmentsRepository
+    {
+        private List&lt;Department&gt; _departments = new List&lt;Department&gt;
+        {
+            new Department(1, "Sales", "Sales Department"),
+            new Department(2, "Engineering", "Engineering Department"),
+            new Department(3, "QA", "Quality Assurance")
+        };
+
+        public List&lt;Department&gt; GetDepartments(string? filter = null)
+        {
+            if (string.IsNullOrWhiteSpace(filter)) return _departments;
+            return _departments
+                .Where(x =&gt; x.Name != null &amp;&amp; x.Name.ToLower().Contains(filter.ToLower()))
+                .ToList();
+        }
+
+        public Department? GetDepartmentById(int id)
+            =&gt; _departments.FirstOrDefault(x =&gt; x.Id == id);
+
+        public void AddDepartment(Department? department)
+        {
+            if (department is not null)
+            {
+                department.Id = _departments.Max(x =&gt; x.Id) + 1;
+                _departments.Add(department);
+            }
+        }
+
+        public bool UpdateDepartment(Department? department)
+        {
+            if (department is not null)
+            {
+                var existing = _departments.FirstOrDefault(x =&gt; x.Id == department.Id);
+                if (existing is not null)
+                {
+                    existing.Name = department.Name;
+                    existing.Description = department.Description;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public bool DeleteDepartment(Department? department)
+        {
+            if (department is not null) { _departments.Remove(department); return true; }
+            return false;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>EmployeesRepository phụ thuộc vào DepartmentsRepository</h3>
+      <p>Repository nhân viên cần biết phòng ban để gắn thông tin <code>Department</code> vào mỗi
+        <code>Employee</code>. Đây là ví dụ điển hình của <strong>service phụ thuộc vào service khác</strong>:
+        <code>EmployeesRepository</code> nhận <code>IDepartmentsRepository</code> qua constructor — DI container
+        sẽ tự giải quyết chuỗi phụ thuộc này.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/EmployeesRepository.cs (trích)</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models
+{
+    public class EmployeesRepository : IEmployeesRepository
+    {
+        private readonly IDepartmentsRepository departmentsRepository;
+
+        // DI container sẽ tự inject IDepartmentsRepository khi tạo EmployeesRepository
+        public EmployeesRepository(IDepartmentsRepository departmentsRepository)
+        {
+            this.departmentsRepository = departmentsRepository;
+        }
+
+        private List&lt;Employee&gt; _employees = new List&lt;Employee&gt;
+        {
+            new Employee(1, "John Doe",       "Engineer",   60000, 1),
+            new Employee(2, "Jane Smith",      "Manager",    75000, 1),
+            new Employee(4, "Alice Johnson",   "Analyst",    55000, 2),
+            new Employee(5, "Bob Lee",         "Developer",  65000, 2),
+            new Employee(9, "Franklin Zhang",  "Architect",  80000, 3),
+            // ...
+        };
+
+        public List&lt;Employee&gt; GetEmployees(string? filter = null, int? departmentId = null)
+        {
+            // Gắn thông tin phòng ban cho mỗi nhân viên
+            foreach (var emp in _employees)
+                emp.Department = departmentsRepository.GetDepartmentById(emp.DepartmentId);
+
+            if (departmentId.HasValue)
+                return _employees.Where(x =&gt; x.DepartmentId == departmentId.Value).ToList();
+
+            if (!string.IsNullOrWhiteSpace(filter))
+                return _employees.Where(x =&gt; x.Name != null
+                    &amp;&amp; x.Name.ToLower().Contains(filter.ToLower())).ToList();
+
+            return _employees;
+        }
+
+        // ... các phương thức Add, Update, Delete tương tự
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>Tại sao dùng Singleton?</strong> Cả hai repository đang lưu dữ liệu
+          <em>in-memory</em> trong danh sách private. Nếu đăng ký là <code>Scoped</code> hoặc <code>Transient</code>,
+          mỗi request sẽ tạo instance mới và dữ liệu thêm/sửa/xóa sẽ bị mất ngay. Dùng
+          <span class="tag">Singleton</span> đảm bảo cùng một instance tồn tại suốt vòng đời ứng dụng.
+          Sau này khi chuyển sang database thật (EF Core), ta thường dùng <code>Scoped</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Constructor Injection trong Controller, PageModel &amp; ViewComponent</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Constructor Injection 2 — Controllers, Pages &amp; ViewComponents</em></p>
+
+      <p>Sau khi đã có interface và implementation, bước tiếp theo là: <strong>đăng ký service vào DI container</strong>
+        trong <code>Program.cs</code>, rồi khai báo phụ thuộc qua constructor ở từng class cần dùng.</p>
+
+      <h3>Đăng ký service trong Program.cs</h3>
+      <p>Mọi service phải được đăng ký vào <code>builder.Services</code> <em>trước</em> khi gọi
+        <code>builder.Build()</code>. ASP.NET Core sẽ dùng thông tin đăng ký này để biết interface nào
+        tương ứng với implementation nào.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApp.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages();
+
+// Đăng ký repository vào DI container dưới dạng Singleton
+builder.Services.AddSingleton&lt;IDepartmentsRepository, DepartmentsRepository&gt;();
+builder.Services.AddSingleton&lt;IEmployeesRepository, EmployeesRepository&gt;();
+
+var app = builder.Build();
+
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}");
+
+    endpoints.MapRazorPages();
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Cú pháp đăng ký:</strong>
+          <code>services.AddSingleton&lt;TInterface, TImplementation&gt;()</code> — khai báo rằng bất cứ khi nào
+          DI container thấy yêu cầu <code>TInterface</code>, nó sẽ cung cấp instance của <code>TImplementation</code>.
+          Đây là bước bắt buộc; nếu thiếu, runtime sẽ ném ngoại lệ <code>InvalidOperationException</code> khi
+          cố khởi tạo class có phụ thuộc chưa đăng ký.</p>
+      </div>
+
+      <h3>Constructor Injection trong MVC Controller</h3>
+      <p>Khi một HTTP request đến, ASP.NET Core routing xác định controller và action method cần thực thi, sau đó
+        <strong>tạo instance controller</strong>. Lúc này framework kiểm tra constructor của controller, thấy
+        tham số kiểu <code>IDepartmentsRepository</code>, tra DI container, lấy instance đã đăng ký và truyền
+        vào. Toàn bộ quá trình này hoàn toàn tự động.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Controllers
+{
+    public class DepartmentsController : Controller
+    {
+        // 1. Khai báo field readonly để lưu service được inject
+        private readonly IDepartmentsRepository departmentsRepository;
+
+        // 2. Constructor nhận service qua tham số — DI container tự truyền vào
+        public DepartmentsController(IDepartmentsRepository departmentsRepository)
+        {
+            this.departmentsRepository = departmentsRepository;
+        }
+
+        [HttpGet]
+        public IActionResult Index()
+        {
+            return View();
+        }
+
+        [Route("/department-list/{filter?}")]
+        public IActionResult SearchDepartments(string? filter)
+        {
+            // 3. Dùng service đã inject như bình thường
+            return ViewComponent("DepartmentList", new { filter });
+        }
+
+        [HttpGet]
+        public IActionResult Details(int id)
+        {
+            var department = departmentsRepository.GetDepartmentById(id);
+            if (department == null)
+                return View("Error", new List&lt;string&gt; { "Department not found." });
+
+            return View(department);
+        }
+
+        [HttpPost]
+        public IActionResult Create(Department department)
+        {
+            if (!ModelState.IsValid)
+                return View("Error", new List&lt;string&gt; { "Invalid data." });
+
+            departmentsRepository.AddDepartment(department);
+            return RedirectToAction(nameof(Index));
+        }
+
+        [HttpPost]
+        public IActionResult Delete(int id)
+        {
+            var department = departmentsRepository.GetDepartmentById(id);
+            if (department == null)
+                return View("Error", new List&lt;string&gt; { "Department not found." });
+
+            departmentsRepository.DeleteDepartment(department);
+            return RedirectToAction(nameof(Index));
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Shortcut Visual Studio:</strong> đặt con trỏ vào tên tham số
+          constructor, nhấn <kbd>Ctrl+.</kbd> → <em>Create and assign field</em>. IDE sẽ tự tạo field
+          <code>private readonly</code> và dòng gán trong constructor.</p>
+      </div>
+
+      <h3>Constructor Injection trong Razor Pages PageModel</h3>
+      <p>Razor Pages không có controller riêng — thay vào đó mỗi page có một <strong>Page Model</strong>
+        (class kế thừa <code>PageModel</code>). Cơ chế inject hoàn toàn giống controller: ASP.NET Core
+        tạo instance Page Model, nhìn vào constructor và inject các service đã đăng ký.</p>
+      <p>Page <em>Create Employee</em> cần cả hai service — một ví dụ inject <strong>nhiều phụ thuộc</strong>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Create.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using WebApp.Models;
+using WebApp.ViewModels;
+
+namespace WebApp.Pages.Employees
+{
+    public class CreateModel : PageModel
+    {
+        private readonly IDepartmentsRepository departmentsRepository;
+        private readonly IEmployeesRepository employeesRepository;
+
+        // Inject nhiều service: DI container tự giải quyết thứ tự
+        public CreateModel(
+            IDepartmentsRepository departmentsRepository,
+            IEmployeesRepository employeesRepository)
+        {
+            this.departmentsRepository = departmentsRepository;
+            this.employeesRepository = employeesRepository;
+        }
+
+        [BindProperty]
+        public EmployeeViewModel? EmployeeViewModel { get; set; }
+
+        public void OnGet()
+        {
+            EmployeeViewModel = new EmployeeViewModel
+            {
+                Employee    = new Employee(),
+                Departments = departmentsRepository.GetDepartments()
+            };
+        }
+
+        public IActionResult OnPost()
+        {
+            if (!ModelState.IsValid)
+                return RedirectToPage("/Error");
+
+            if (EmployeeViewModel?.Employee is not null)
+                employeesRepository.AddEmployee(EmployeeViewModel.Employee);
+
+            return RedirectToPage("Index");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <p>Page <em>Edit Employee</em> tương tự — cũng inject hai service và dùng chúng trong cả handler
+        GET và POST:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs (trích)</span><span class="lang">csharp</span></div>
+        <pre><code>public class EditModel : PageModel
+{
+    private readonly IEmployeesRepository employeesRepository;
+    private readonly IDepartmentsRepository departmentsRepository;
+
+    public EditModel(
+        IEmployeesRepository employeesRepository,
+        IDepartmentsRepository departmentsRepository)
+    {
+        this.employeesRepository   = employeesRepository;
+        this.departmentsRepository = departmentsRepository;
+    }
+
+    [BindProperty]
+    public EmployeeViewModel? EmployeeViewModel { get; set; }
+
+    public void OnGet(int id)
+    {
+        EmployeeViewModel = new EmployeeViewModel
+        {
+            Employee    = employeesRepository.GetEmployeeById(id),
+            Departments = departmentsRepository.GetDepartments()
+        };
+    }
+
+    public IActionResult OnPost()
+    {
+        if (!ModelState.IsValid) return RedirectToPage("/Error");
+        if (EmployeeViewModel?.Employee is not null)
+            employeesRepository.UpdateEmployee(EmployeeViewModel.Employee);
+        return RedirectToPage("Index");
+    }
+
+    public IActionResult OnPostDeleteEmplopyee(int id)
+    {
+        var employee = employeesRepository.GetEmployeeById(id);
+        if (employee == null) return RedirectToPage("/Error");
+        employeesRepository.DeleteEmployee(employee);
+        return RedirectToPage("Index");
+    }
+}</code></pre>
+      </div>
+
+      <h3>Constructor Injection trong ViewComponent</h3>
+      <p><strong>ViewComponent</strong> cũng là một class bình thường — nó cũng được DI container tạo ra
+        và cũng hỗ trợ constructor injection. Đây là điểm mạnh của DI: cơ chế nhất quán cho mọi loại
+        class trong ASP.NET Core.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/Components/DepartmentList/DepartmentListViewComponent.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Views.Shared.Components.DepartmentList
+{
+    [ViewComponent]
+    public class DepartmentListViewComponent : ViewComponent
+    {
+        private readonly IDepartmentsRepository departmentsRepository;
+
+        public DepartmentListViewComponent(IDepartmentsRepository departmentsRepository)
+        {
+            this.departmentsRepository = departmentsRepository;
+        }
+
+        public IViewComponentResult Invoke(string? filter)
+        {
+            var departments = departmentsRepository.GetDepartments(filter);
+            return View(departments);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Shared/Components/EmployeeList/EmployeeListViewComponent.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Pages.Shared.Components.EmployeeList
+{
+    public class EmployeeListViewComponent : ViewComponent
+    {
+        private readonly IEmployeesRepository employeesRepository;
+
+        public EmployeeListViewComponent(IEmployeesRepository employeesRepository)
+        {
+            this.employeesRepository = employeesRepository;
+        }
+
+        public IViewComponentResult Invoke(string? filter, int? departmentId)
+        {
+            return View(employeesRepository.GetEmployees(filter, departmentId));
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Luồng hoạt động tổng thể</h3>
+      <p>Sơ đồ dưới đây minh họa cách DI container giải quyết toàn bộ chuỗi phụ thuộc khi một HTTP request đến:</p>
+
+      <table class="tbl">
+        <tr>
+          <th>Bước</th>
+          <th>Điều xảy ra</th>
+        </tr>
+        <tr>
+          <td>1. Request đến</td>
+          <td>Routing xác định <code>DepartmentsController</code> hoặc Razor Page Model cần xử lý.</td>
+        </tr>
+        <tr>
+          <td>2. DI khởi tạo</td>
+          <td>Framework yêu cầu DI container tạo instance. Container đọc constructor, thấy <code>IDepartmentsRepository</code>.</td>
+        </tr>
+        <tr>
+          <td>3. Giải quyết phụ thuộc</td>
+          <td>Container tra bảng đăng ký, tìm thấy <code>DepartmentsRepository</code> là Singleton — trả về instance đã có (hoặc tạo mới lần đầu).</td>
+        </tr>
+        <tr>
+          <td>4. Chuỗi phụ thuộc</td>
+          <td><code>EmployeesRepository</code> cần <code>IDepartmentsRepository</code> — container tự giải quyết tiếp, không cần can thiệp thủ công.</td>
+        </tr>
+        <tr>
+          <td>5. Thực thi</td>
+          <td>Action method / handler / <code>Invoke()</code> chạy với service đã sẵn sàng.</td>
+        </tr>
+      </table>
+
+      <h3>View Injection với @inject</h3>
+      <p>Ngoài constructor injection, Razor Views còn hỗ trợ <strong>view injection</strong> bằng directive
+        <code>@inject</code>. Kỹ thuật này phù hợp khi view cần một service nhỏ (ví dụ: helper tính toán,
+        formatter) mà không muốn truyền qua ViewModel.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml (ví dụ @inject)</span><span class="lang">html</span></div>
+        <pre><code>@* Inject service trực tiếp vào view *@
+@inject WebApp.Models.IDepartmentsRepository DeptRepo
+
+@{
+    ViewData["Title"] = "Departments";
+    // Có thể gọi service ngay trong view nếu cần
+    var count = DeptRepo.GetDepartments().Count;
+}
+
+&lt;h1&gt;Danh sách phòng ban (@count phòng ban)&lt;/h1&gt;</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Khi nào KHÔNG dùng @inject:</strong> View injection phù hợp
+          cho các service phụ trợ nhỏ (format, localization…). Tránh dùng @inject để gọi logic nghiệp vụ
+          hoặc truy vấn dữ liệu phức tạp — những tác vụ đó nên nằm trong controller/page model để đảm
+          bảo nguyên tắc Separation of Concerns.</p>
+      </div>
+
+      <h3>Tổng kết điểm khác biệt: Minimal API vs MVC/Razor Pages</h3>
+      <table class="tbl">
+        <tr>
+          <th>Đặc điểm</th>
+          <th>Minimal API</th>
+          <th>MVC / Razor Pages</th>
+        </tr>
+        <tr>
+          <td>Vị trí inject</td>
+          <td>Tham số của lambda handler (method injection)</td>
+          <td>Constructor của Controller / PageModel / ViewComponent</td>
+        </tr>
+        <tr>
+          <td>Scope</td>
+          <td>Chỉ trong handler đó</td>
+          <td>Dùng được trong toàn bộ class (mọi action method)</td>
+        </tr>
+        <tr>
+          <td>View injection</td>
+          <td>Không áp dụng</td>
+          <td>Hỗ trợ qua <code>@inject</code> trong <code>.cshtml</code></td>
+        </tr>
+        <tr>
+          <td>Đăng ký service</td>
+          <td colspan="2" style="text-align:center">Giống nhau — <code>builder.Services.AddXxx&lt;TInterface, TImpl&gt;()</code></td>
+        </tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Nguyên tắc ghi nhớ:</strong> Luôn phụ thuộc vào <em>interface</em>,
+          không phải <em>class cụ thể</em>. Đăng ký đúng lifetime (Singleton / Scoped / Transient).
+          DI container sẽ lo phần còn lại — bạn chỉ cần khai báo "tôi cần cái này" trong constructor.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-16.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">16 · Tag Helpers</div>
+      </a>
+      <a class="next" href="lesson-18.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">18 · Minimal API — Filter Pipeline</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

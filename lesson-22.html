@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 22 — Minimal API: Documentation &amp; Versioning | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 22 — Minimal API: Documentation &amp; Versioning</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Tài liệu hóa Minimal API với OpenAPI</a></li>
+      <li><a href="#s2">2. OpenAPI hoạt động như thế nào</a></li>
+      <li><a href="#s3">3. Xem tài liệu OpenAPI bằng Postman</a></li>
+      <li><a href="#s4">4. Hiển thị tài liệu bằng Swagger UI</a></li>
+      <li><a href="#s5">5. Bổ sung chi tiết cho tài liệu OpenAPI</a></li>
+      <li><a href="#s6">6. Versioning cho Minimal API</a></li>
+      <li><a href="#s7">7. Tài liệu hóa nhiều phiên bản API</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 22</span>
+      <h1>Minimal API — Documentation &amp; Versioning</h1>
+      <p class="lead">Tài liệu hóa Minimal API với OpenAPI tích hợp sẵn của .NET 9, tích hợp Swagger UI, bổ sung metadata chi tiết cho từng endpoint, và quản lý versioning với <code>Asp.Versioning.Http</code>.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Tài liệu hóa Minimal API với OpenAPI</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Use OpenAPI to document Minimal APIs</em></p>
+
+      <p>Khi xây dựng API — dù là Minimal API hay Web API với Controllers — việc <strong>tài liệu hóa</strong> (documentation) là bắt buộc nếu API đó được tiêu thụ bởi nhiều nhóm phát triển khác nhau, thậm chí bởi các công ty bên ngoài. Người dùng API cần biết:</p>
+      <ul>
+        <li>Có những URL (endpoint) nào và phương thức HTTP nào (<code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>…)?</li>
+        <li>Mỗi endpoint nhận những tham số nào, kiểu dữ liệu là gì?</li>
+        <li>Phản hồi trả về có cấu trúc ra sao, kiểu dữ liệu nào?</li>
+      </ul>
+
+      <p><strong>OpenAPI</strong> (trước đây gọi là Swagger Specification) là một <em>chuẩn mở</em> để mô tả API RESTful dưới dạng tài liệu JSON/YAML có thể đọc bởi cả máy lẫn người. Từ bản tài liệu này, các công cụ như Postman, Swagger UI có thể tự động tạo giao diện kiểm thử mà không cần viết thêm code.</p>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>.NET 9 tích hợp sẵn OpenAPI:</strong> Từ .NET 9, ASP.NET Core đã có package <code>Microsoft.AspNetCore.OpenApi</code> tích hợp trực tiếp vào SDK, cho phép sinh tài liệu OpenAPI mà <strong>không cần Swashbuckle để generate document</strong>. Chỉ cần gọi <code>builder.Services.AddOpenApi()</code> và <code>app.MapOpenApi()</code>.</p>
+      </div>
+
+      <h3>Cài đặt và cấu hình cơ bản</h3>
+      <p>Package <code>Microsoft.AspNetCore.OpenApi</code> đã có sẵn trong SDK .NET 9. Với project ASP.NET Core Web API (hoặc Empty), chỉ cần thêm package nếu chưa có:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Microsoft.AspNetCore.OpenApi</code></pre>
+      </div>
+
+      <p>Tiếp theo cấu hình trong <code>Program.cs</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký dịch vụ sinh tài liệu OpenAPI
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+// Ánh xạ endpoint phục vụ tài liệu OpenAPI dưới dạng JSON
+// Mặc định truy cập tại: /openapi/v1.json
+app.MapOpenApi();
+
+// Định nghĩa các Minimal API endpoint
+app.MapGet("/departments", () =&gt; Results.Ok(new[] { "HR", "IT", "Finance" }))
+   .WithName("GetDepartments")
+   .WithSummary("Lấy danh sách phòng ban");
+
+app.MapGet("/departments/{id}", (int id) =&gt; Results.Ok(new { Id = id, Name = "HR" }))
+   .WithName("GetDepartmentById")
+   .WithSummary("Lấy phòng ban theo ID");
+
+app.Run();</code></pre>
+      </div>
+
+      <p>Sau khi chạy ứng dụng, truy cập <code>http://localhost:PORT/openapi/v1.json</code> để xem tài liệu OpenAPI dạng JSON.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>Phân biệt với Swashbuckle:</strong> Swashbuckle (<code>Swashbuckle.AspNetCore</code>) là giải pháp bên thứ ba, bao gồm cả phần <em>sinh document</em> (Swashbuckle.AspNetCore.SwaggerGen) lẫn <em>giao diện Swagger UI</em>. Trong .NET 9, phần sinh document được thay thế bởi <code>Microsoft.AspNetCore.OpenApi</code>, còn Swagger UI vẫn có thể dùng từ Swashbuckle hoặc Scalar.</p>
+      </div>
+
+      <h3>Hai lý do chính cần tài liệu hóa API</h3>
+      <table class="tbl">
+        <tr><th>Lý do</th><th>Mô tả</th></tr>
+        <tr>
+          <td><strong>Cung cấp specification</strong></td>
+          <td>Cho phép các nhóm khác (thậm chí ở công ty khác, ở bất kỳ nơi nào trên thế giới) biết cách gọi đúng API mà không cần đọc source code.</td>
+        </tr>
+        <tr>
+          <td><strong>Kiểm thử API</strong></td>
+          <td>Các công cụ như Postman, Swagger UI đọc tài liệu OpenAPI và tự tạo giao diện giúp kiểm thử từng endpoint trực tiếp trên trình duyệt mà không cần viết code client.</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> OpenAPI hoạt động như thế nào</h2>
+      <p class="subvideo-meta">Bài 2 · <em>How OpenAPI Works</em></p>
+
+      <p>Để hiểu cách OpenAPI hoạt động trong ASP.NET Core .NET 9, hãy nhìn vào <strong>middleware pipeline</strong>. Khi gọi <code>app.MapOpenApi()</code>, một endpoint đặc biệt được đăng ký trong hệ thống routing.</p>
+
+      <h3>Luồng xử lý request tài liệu OpenAPI</h3>
+      <ol class="steps">
+        <li>Client gửi request đến <code>GET /openapi/v1.json</code>.</li>
+        <li>Request đi qua middleware pipeline thông thường (Routing, Authentication,…).</li>
+        <li>Routing nhận ra đây là endpoint tài liệu OpenAPI và chuyển đến handler do <code>MapOpenApi()</code> đăng ký.</li>
+        <li>Handler <strong>tự động duyệt qua tất cả endpoint</strong> đã được đăng ký trong ứng dụng (thông qua <em>API Explorer</em>), thu thập metadata: URL, phương thức HTTP, tham số, kiểu trả về.</li>
+        <li>Handler sinh ra tài liệu JSON theo chuẩn OpenAPI 3.x và trả về cho client.</li>
+      </ol>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Tài liệu OpenAPI được sinh <strong>động</strong> (on-the-fly) — mỗi lần request đến <code>/openapi/v1.json</code>, hệ thống đọc lại thông tin endpoint tại thời điểm đó. Điều này đảm bảo tài liệu luôn đồng bộ với code thực tế.</p>
+      </div>
+
+      <h3>Cơ chế khám phá endpoint (API Explorer)</h3>
+      <p>ASP.NET Core sử dụng <strong>API Explorer</strong> — một abstraction nằm bên trong framework — để thu thập thông tin về tất cả endpoint. Khi bạn gọi <code>MapGet</code>, <code>MapPost</code>… và bổ sung metadata (<code>WithName</code>, <code>Produces</code>, <code>WithSummary</code>…), các thông tin này được lưu vào <em>endpoint metadata</em>. Middleware OpenAPI đọc metadata đó và chuyển hóa thành cấu trúc OpenAPI chuẩn.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ cấu trúc tài liệu JSON (rút gọn)</span><span class="lang">json</span></div>
+        <pre><code>{
+  "openapi": "3.0.1",
+  "info": { "title": "MyApi", "version": "1.0" },
+  "paths": {
+    "/departments": {
+      "get": {
+        "summary": "Lấy danh sách phòng ban",
+        "operationId": "GetDepartments",
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    }
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Xem tài liệu OpenAPI bằng Postman</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Use Postman to Visualize OpenAPI documents</em></p>
+
+      <p>Tài liệu OpenAPI dạng JSON thuần có thể khó đọc đối với người dùng thông thường. <strong>Postman</strong> có khả năng <em>import</em> tài liệu OpenAPI và tự động tạo một <strong>Collection</strong> gồm tất cả các request tương ứng với từng endpoint — giúp việc kiểm thử API trở nên trực quan hơn nhiều.</p>
+
+      <h3>Các bước import vào Postman</h3>
+      <ol class="steps">
+        <li>Chạy ứng dụng ASP.NET Core, truy cập <code>http://localhost:PORT/openapi/v1.json</code> và sao chép toàn bộ nội dung JSON.</li>
+        <li>Mở Postman → chọn <strong>File → Import</strong>.</li>
+        <li>Chọn tab <strong>Raw text</strong>, dán JSON vào và nhấn <strong>Continue → Import</strong>.</li>
+        <li>Postman sẽ tạo một Collection với các thư mục và request tương ứng với từng endpoint và tag.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Base URL variable:</strong> Sau khi import, Postman tự tạo biến <code>baseUrl</code> trỏ về <code>http://localhost:PORT</code>. Khi deploy lên môi trường production, bạn chỉ cần thay đổi giá trị biến này một lần — tất cả request trong collection sẽ tự cập nhật.</p>
+      </div>
+
+      <h3>Lưu ý về tính thời điểm</h3>
+      <p>Collection được tạo từ Postman chỉ là một <em>snapshot</em> tại thời điểm import. Nếu API có thay đổi (thêm endpoint, đổi tham số…), bạn cần import lại tài liệu OpenAPI mới nhất để Postman Collection phản ánh đúng thực tế.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Ngoài Postman, bạn cũng có thể dùng <strong>Scalar</strong> — một công cụ UI hiện đại được Microsoft khuyến nghị cho .NET 9, tích hợp trực tiếp vào ứng dụng qua package <code>Scalar.AspNetCore</code> — như một thay thế cho Swagger UI.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Hiển thị tài liệu bằng Swagger UI</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Use Swagger to visualize the OpenAPI document</em></p>
+
+      <p><strong>Swagger UI</strong> là giao diện web tương tác, đọc tài liệu OpenAPI và hiển thị dưới dạng trang HTML trực quan. Người dùng có thể xem danh sách endpoint, mô tả, và <em>gọi thử API trực tiếp trên trình duyệt</em> mà không cần Postman hay bất kỳ công cụ nào khác.</p>
+
+      <p>Trong .NET 9, <code>Microsoft.AspNetCore.OpenApi</code> chỉ sinh ra tài liệu JSON. Để có giao diện Swagger UI, cần cài thêm package <code>Swashbuckle.AspNetCore.SwaggerUi</code> (chỉ lấy phần UI, không lấy phần generate document của Swashbuckle).</p>
+
+      <h3>Cài đặt</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Swashbuckle.AspNetCore.SwaggerUi</code></pre>
+      </div>
+
+      <h3>Cấu hình trong Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenApi(); // Sinh tài liệu OpenAPI JSON (.NET 9 built-in)
+
+var app = builder.Build();
+
+// Middleware sinh tài liệu OpenAPI JSON tại /openapi/v1.json
+app.MapOpenApi();
+
+// Middleware Swagger UI — đọc tài liệu từ endpoint MapOpenApi()
+// và hiển thị giao diện tại /swagger
+app.UseSwaggerUI(options =&gt;
+{
+    options.SwaggerEndpoint("/openapi/v1.json", "Department Management API v1");
+    options.RoutePrefix = "swagger"; // truy cập tại /swagger
+});
+
+app.MapGet("/departments", () =&gt; Results.Ok(new[] { "HR", "IT", "Finance" }));
+app.MapPost("/departments", (Department dept) =&gt; Results.Created($"/departments/1", dept));
+
+app.Run();</code></pre>
+      </div>
+
+      <p>Sau khi cấu hình, truy cập <code>http://localhost:PORT/swagger</code> để thấy giao diện Swagger UI.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Chỉ bật ở môi trường Development:</strong> Trong production, không nên expose tài liệu API công khai trừ khi API là public. Nên bọc trong điều kiện <code>if (app.Environment.IsDevelopment())</code> để chỉ bật khi phát triển.</p>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — Chỉ bật khi Development</span><span class="lang">csharp</span></div>
+        <pre><code>if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(options =&gt;
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "My API v1");
+    });
+}</code></pre>
+      </div>
+
+      <h3>So sánh các tùy chọn UI</h3>
+      <table class="tbl">
+        <tr><th>Công cụ</th><th>Package</th><th>Ghi chú</th></tr>
+        <tr>
+          <td>Swagger UI</td>
+          <td><code>Swashbuckle.AspNetCore.SwaggerUi</code></td>
+          <td>Quen thuộc, phổ biến nhất, giao diện cổ điển</td>
+        </tr>
+        <tr>
+          <td>Scalar</td>
+          <td><code>Scalar.AspNetCore</code></td>
+          <td>Hiện đại, được Microsoft khuyến nghị cho .NET 9, giao diện đẹp hơn</td>
+        </tr>
+        <tr>
+          <td>Postman</td>
+          <td>Không cần cài</td>
+          <td>Import JSON, kiểm thử ngoài trình duyệt</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Bổ sung chi tiết cho tài liệu OpenAPI</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Provide details to OpenAPI document</em></p>
+
+      <p>Mặc định, <code>MapOpenApi()</code> tự động phát hiện URL, phương thức HTTP và kiểu tham số từ code. Tuy nhiên nhiều thông tin quan trọng phải bổ sung thủ công để tài liệu trở nên đầy đủ và dễ hiểu hơn với người dùng API.</p>
+
+      <h3>Các extension method bổ sung metadata</h3>
+      <table class="tbl">
+        <tr><th>Method</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>WithName(string)</code></td><td>Đặt <em>operationId</em> — định danh duy nhất cho endpoint trong tài liệu OpenAPI</td></tr>
+        <tr><td><code>WithSummary(string)</code></td><td>Mô tả ngắn hiển thị ngay trên thanh tiêu đề endpoint trong Swagger UI</td></tr>
+        <tr><td><code>WithDescription(string)</code></td><td>Mô tả chi tiết, hỗ trợ Markdown</td></tr>
+        <tr><td><code>WithTags(string[])</code></td><td>Nhóm endpoint theo tag — Swagger UI hiển thị theo nhóm</td></tr>
+        <tr><td><code>Produces&lt;T&gt;(int statusCode)</code></td><td>Khai báo kiểu dữ liệu trả về và HTTP status code tương ứng</td></tr>
+        <tr><td><code>ProducesProblem(int statusCode)</code></td><td>Khai báo trường hợp trả về lỗi ProblemDetails</td></tr>
+        <tr><td><code>WithOpenApi()</code></td><td>Kích hoạt tùy chỉnh OpenAPI nâng cao (bắt buộc khi dùng attribute trên delegate)</td></tr>
+      </table>
+
+      <h3>Ví dụ đầy đủ</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Http.HttpResults;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+app.MapOpenApi();
+app.UseSwaggerUI(o =&gt; o.SwaggerEndpoint("/openapi/v1.json", "API v1"));
+
+// --- Nhóm Department ---
+var deptGroup = app.MapGroup("/departments").WithTags("Departments");
+
+deptGroup.MapGet("/", () =&gt; Results.Ok(new[] { new Department(1, "HR"), new Department(2, "IT") }))
+    .WithName("GetDepartments")
+    .WithSummary("Lấy tất cả phòng ban")
+    .WithDescription("Trả về danh sách toàn bộ phòng ban hiện có trong hệ thống.")
+    .Produces&lt;Department[]&gt;(StatusCodes.Status200OK);
+
+deptGroup.MapGet("/{id:int}", (int id) =&gt;
+    {
+        var dept = new Department(id, "HR");
+        return Results.Ok(dept);
+    })
+    .WithName("GetDepartmentById")
+    .WithSummary("Lấy phòng ban theo ID")
+    .Produces&lt;Department&gt;(StatusCodes.Status200OK)
+    .ProducesProblem(StatusCodes.Status404NotFound);
+
+deptGroup.MapPost("/", (Department dept) =&gt; Results.Created($"/departments/{dept.Id}", dept))
+    .WithName("CreateDepartment")
+    .WithSummary("Tạo phòng ban mới")
+    .Produces&lt;Department&gt;(StatusCodes.Status201Created)
+    .ProducesValidationProblem();
+
+deptGroup.MapPut("/{id:int}", (int id, Department dept) =&gt; Results.Ok(dept))
+    .WithName("UpdateDepartment")
+    .WithSummary("Cập nhật phòng ban");
+
+deptGroup.MapDelete("/{id:int}", (int id) =&gt; Results.NoContent())
+    .WithName("DeleteDepartment")
+    .WithSummary("Xóa phòng ban");
+
+app.Run();
+
+record Department(int Id, string Name);</code></pre>
+      </div>
+
+      <h3>Sử dụng attribute trên endpoint handler</h3>
+      <p>Nếu muốn dùng attribute (giống cách làm với Controller), cần thêm <code>.WithOpenApi()</code> vào cuối chuỗi và đặt attribute trực tiếp trên lambda:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — Dùng attribute</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/employees", [Tags("Employees")] () =&gt;
+    {
+        return Results.Ok(new[] { new Employee(1, "Alice"), new Employee(2, "Bob") });
+    })
+    .WithName("GetEmployees")
+    .WithSummary("Lấy danh sách nhân viên")
+    .Produces&lt;Employee[]&gt;(200)
+    .WithOpenApi(); // bắt buộc khi dùng attribute trên delegate
+
+record Employee(int Id, string FullName);</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Nên ưu tiên dùng <strong>extension method</strong> (<code>WithSummary</code>, <code>WithTags</code>…) thay vì attribute trên lambda — cú pháp nhất quán, dễ đọc hơn và không cần <code>WithOpenApi()</code>.</p>
+      </div>
+
+      <h3>Kết quả trong Swagger UI</h3>
+      <p>Sau khi bổ sung đầy đủ metadata:</p>
+      <ul>
+        <li>Các endpoint được nhóm theo tag (Departments, Employees).</li>
+        <li>Mỗi endpoint hiển thị summary, description, các status code có thể trả về.</li>
+        <li>Schema của request body và response body được hiển thị tự động.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Versioning cho Minimal API</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Minimal API Versioning</em></p>
+
+      <p><strong>API Versioning</strong> là kỹ thuật duy trì nhiều phiên bản của cùng một API cùng lúc, để các client đang dùng phiên bản cũ không bị ảnh hưởng khi API được cập nhật (thay đổi breaking).</p>
+
+      <h3>Tại sao cần versioning?</h3>
+      <p>Giả sử bạn có endpoint <code>GET /departments</code> đang được nhiều ứng dụng mobile (version 1) sử dụng. Nếu bạn thay đổi cấu trúc phản hồi, các ứng dụng cũ sẽ bị lỗi. Giải pháp: tạo <code>v2</code> của endpoint với URL riêng (<code>/api/v2/departments</code>) — client cũ vẫn dùng v1, client mới dùng v2.</p>
+
+      <h3>Cài đặt package</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Asp.Versioning.Http</code></pre>
+      </div>
+
+      <h3>Cấu hình versioning</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Asp.Versioning;
+using Asp.Versioning.Builder;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenApi();
+
+// Đăng ký dịch vụ API Versioning
+builder.Services.AddApiVersioning(options =&gt;
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true; // trả về header api-supported-versions
+});
+
+var app = builder.Build();
+app.MapOpenApi();
+app.UseSwaggerUI(o =&gt; o.SwaggerEndpoint("/openapi/v1.json", "API v1"));
+
+// Tạo ApiVersionSet — tập hợp các phiên bản được hỗ trợ
+ApiVersionSet versionSet = app.NewApiVersionSet()
+    .HasApiVersion(new ApiVersion(1, 0))
+    .HasApiVersion(new ApiVersion(2, 0))
+    .ReportApiVersions()
+    .Build();
+
+// Tạo route group có prefix version trong URL: /api/v{version}/...
+var apiGroup = app.MapGroup("/api/v{version:apiVersion}")
+                  .WithApiVersionSet(versionSet);
+
+// Version 1 — phản hồi đơn giản
+apiGroup.MapGet("/departments", () =&gt;
+    Results.Ok(new[] { new DeptV1(1, "HR"), new DeptV1(2, "IT") }))
+    .MapToApiVersion(new ApiVersion(1, 0))
+    .WithName("GetDepartmentsV1")
+    .WithSummary("Lấy phòng ban (v1)");
+
+// Version 2 — phản hồi mở rộng thêm trường
+apiGroup.MapGet("/departments", () =&gt;
+    Results.Ok(new[] { new DeptV2(1, "HR", 50), new DeptV2(2, "IT", 30) }))
+    .MapToApiVersion(new ApiVersion(2, 0))
+    .WithName("GetDepartmentsV2")
+    .WithSummary("Lấy phòng ban (v2) — bao gồm số nhân viên");
+
+app.Run();
+
+record DeptV1(int Id, string Name);
+record DeptV2(int Id, string Name, int EmployeeCount);</code></pre>
+      </div>
+
+      <h3>Cách gọi API theo version</h3>
+      <table class="tbl">
+        <tr><th>URL</th><th>Kết quả</th></tr>
+        <tr><td><code>GET /api/v1/departments</code></td><td>Trả về danh sách <code>DeptV1</code></td></tr>
+        <tr><td><code>GET /api/v2/departments</code></td><td>Trả về danh sách <code>DeptV2</code> (thêm trường)</td></tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>Các chiến lược versioning:</strong> Ngoài URL segment (<code>/v1/</code>), <code>Asp.Versioning.Http</code> còn hỗ trợ versioning qua <strong>query string</strong> (<code>?api-version=1.0</code>) và <strong>HTTP header</strong> (<code>X-Api-Version: 1.0</code>). Có thể kết hợp nhiều chiến lược cùng lúc.</p>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Khi dùng <code>MapGroup</code> với <code>WithApiVersionSet</code>, tất cả endpoint trong group đều phải được gắn <code>MapToApiVersion()</code> rõ ràng, nếu không framework sẽ không biết endpoint đó thuộc version nào.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Tài liệu hóa nhiều phiên bản API</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Documenting multiple versions for minimal APIs</em></p>
+
+      <p>Sau khi cấu hình versioning, nếu truy cập <code>/openapi/v1.json</code> hoặc <code>/openapi/v2.json</code>, bạn sẽ thấy thông báo lỗi: <em>"No OpenAPI document was found with the name 'v2'"</em>. Nguyên nhân là mặc định <code>AddOpenApi()</code> chỉ tạo một document tên <code>v1</code>, chưa biết về các version khác.</p>
+
+      <h3>Cấu hình nhiều OpenAPI document</h3>
+      <p>Cần gọi <code>AddOpenApi()</code> cho từng version, kèm theo cách lọc endpoint thuộc version đó:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Asp.Versioning;
+using Asp.Versioning.Builder;
+using Microsoft.AspNetCore.OpenApi;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddApiVersioning(options =&gt;
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+});
+
+// Đăng ký document OpenAPI cho Version 1
+builder.Services.AddOpenApi("v1", options =&gt;
+{
+    options.ShouldInclude = (description) =&gt;
+        description.GroupName == "v1";
+});
+
+// Đăng ký document OpenAPI cho Version 2
+builder.Services.AddOpenApi("v2", options =&gt;
+{
+    options.ShouldInclude = (description) =&gt;
+        description.GroupName == "v2";
+});
+
+var app = builder.Build();
+
+// Ánh xạ 2 endpoint tài liệu riêng biệt
+app.MapOpenApi("/openapi/{documentName}.json");
+
+// Swagger UI — liệt kê cả hai version
+app.UseSwaggerUI(options =&gt;
+{
+    options.SwaggerEndpoint("/openapi/v1.json", "API Version 1");
+    options.SwaggerEndpoint("/openapi/v2.json", "API Version 2");
+});
+
+// Tạo ApiVersionSet
+ApiVersionSet versionSet = app.NewApiVersionSet()
+    .HasApiVersion(new ApiVersion(1, 0))
+    .HasApiVersion(new ApiVersion(2, 0))
+    .ReportApiVersions()
+    .Build();
+
+var apiGroup = app.MapGroup("/api/v{version:apiVersion}")
+                  .WithApiVersionSet(versionSet);
+
+// Endpoint v1 — gắn GroupName để lọc vào document "v1"
+apiGroup.MapGet("/departments", () =&gt;
+    Results.Ok(new[] { new DeptV1(1, "HR") }))
+    .MapToApiVersion(new ApiVersion(1, 0))
+    .WithName("GetDepartmentsV1")
+    .WithSummary("Lấy danh sách phòng ban (v1)")
+    .WithGroupName("v1");
+
+// Endpoint v2 — gắn GroupName để lọc vào document "v2"
+apiGroup.MapGet("/departments", () =&gt;
+    Results.Ok(new[] { new DeptV2(1, "HR", 50) }))
+    .MapToApiVersion(new ApiVersion(2, 0))
+    .WithName("GetDepartmentsV2")
+    .WithSummary("Lấy danh sách phòng ban (v2) — có số nhân viên")
+    .WithGroupName("v2");
+
+apiGroup.MapGet("/departments/{id:int}", (int id) =&gt;
+    Results.Ok(new DeptV1(id, "HR")))
+    .MapToApiVersion(new ApiVersion(1, 0))
+    .WithName("GetDepartmentByIdV1")
+    .WithGroupName("v1");
+
+apiGroup.MapGet("/departments/{id:int}", (int id) =&gt;
+    Results.Ok(new DeptV2(id, "HR", 50)))
+    .MapToApiVersion(new ApiVersion(2, 0))
+    .WithName("GetDepartmentByIdV2")
+    .WithGroupName("v2");
+
+app.Run();
+
+record DeptV1(int Id, string Name);
+record DeptV2(int Id, string Name, int EmployeeCount);</code></pre>
+      </div>
+
+      <h3>Truy cập tài liệu từng version</h3>
+      <table class="tbl">
+        <tr><th>URL</th><th>Nội dung</th></tr>
+        <tr><td><code>/openapi/v1.json</code></td><td>Tài liệu OpenAPI chỉ chứa endpoint v1</td></tr>
+        <tr><td><code>/openapi/v2.json</code></td><td>Tài liệu OpenAPI chỉ chứa endpoint v2</td></tr>
+        <tr><td><code>/swagger</code></td><td>Swagger UI với dropdown chọn v1 hoặc v2</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Dropdown version trong Swagger UI:</strong> Khi bạn đăng ký nhiều <code>SwaggerEndpoint</code>, Swagger UI sẽ hiển thị một <strong>dropdown selector</strong> ở góc phải trên cùng, cho phép chuyển đổi qua lại giữa tài liệu v1 và v2 ngay trong trình duyệt.</p>
+      </div>
+
+      <h3>Tóm tắt toàn bộ cấu hình</h3>
+      <ol class="steps">
+        <li>Cài <code>Microsoft.AspNetCore.OpenApi</code> (sinh tài liệu JSON — built-in .NET 9) và <code>Asp.Versioning.Http</code> (versioning).</li>
+        <li>Cài <code>Swashbuckle.AspNetCore.SwaggerUi</code> nếu cần giao diện Swagger UI trong trình duyệt.</li>
+        <li>Gọi <code>AddApiVersioning()</code> và <code>AddOpenApi("v1")</code> + <code>AddOpenApi("v2")</code> trong phần đăng ký dịch vụ.</li>
+        <li>Gọi <code>app.MapOpenApi("/openapi/{documentName}.json")</code> và <code>app.UseSwaggerUI()</code> sau <code>builder.Build()</code>.</li>
+        <li>Tạo <code>ApiVersionSet</code>, dùng <code>MapGroup</code> với <code>WithApiVersionSet</code>.</li>
+        <li>Gắn <code>MapToApiVersion()</code> và <code>WithGroupName()</code> cho từng endpoint.</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Điểm mấu chốt:</strong> <code>WithGroupName("v1")</code> liên kết endpoint với tài liệu OpenAPI có tên <code>"v1"</code> — hai tên này phải khớp nhau. Đây là cơ chế mà <code>ShouldInclude</code> dùng để lọc endpoint đưa vào từng document.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-21.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">21 · Tạo Web API với Controllers</div>
+      </a>
+      <a class="next" href="lesson-23.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">23 · Web API — Documentation &amp; Versioning</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

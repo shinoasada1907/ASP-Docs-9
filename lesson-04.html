@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 04 — Minimal API · Routing | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 04 — Minimal API · Routing</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Hiểu về Endpoint</a></li>
+      <li><a href="#s2">2. Routing Middleware</a></li>
+      <li><a href="#s3">3. Middleware 404 Not Found</a></li>
+      <li><a href="#s4">4. Route Parameter bắt buộc</a></li>
+      <li><a href="#s5">5. Route Parameter có giá trị mặc định</a></li>
+      <li><a href="#s6">6. Route Parameter tùy chọn</a></li>
+      <li><a href="#s7">7. Route Constraints</a></li>
+      <li><a href="#s8">8. Custom Route Constraints</a></li>
+      <li><a href="#s9">9. Bài tập: CRUD với Routing</a></li>
+      <li><a href="#s10">10. Đáp án bài tập CRUD</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 04</span>
+      <h1>Minimal API — Routing</h1>
+      <p class="lead">Định tuyến (routing) trong Minimal API: hiểu endpoint là gì, cách routing middleware hoạt động, route parameters (bắt buộc, mặc định, tùy chọn), route constraints dựng sẵn và tự viết, cùng bài tập CRUD đầy đủ.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Hiểu về Endpoint</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Understand Endpoints</em></p>
+
+      <p>Trước khi đi vào routing, cần nắm vững khái niệm <strong>endpoint</strong>. Khi một HTTP request đến ứng dụng web, ứng dụng thường có <em>nhiều endpoint</em> — mỗi endpoint là một "điểm đến" xử lý một loại request nhất định.</p>
+
+      <h3>Endpoint là gì?</h3>
+      <p>Một <strong>endpoint</strong> gồm hai phần không thể tách rời:</p>
+      <ul>
+        <li><strong>Route template</strong> — mẫu URL để nhận dạng request (ví dụ <code>/employees</code>, <code>/employees/{id}</code>).</li>
+        <li><strong>Request delegate (endpoint handler)</strong> — hàm/lambda được gọi khi request khớp với route template đó.</li>
+      </ul>
+
+      <p>Nói cách khác, routing là cơ chế <em>ánh xạ</em> một request đến đúng endpoint handler, để handler đó xử lý và trả về response.</p>
+
+      <h3>Đăng ký Endpoint trong Minimal API</h3>
+      <p>Trong Minimal API (.NET 6+), endpoint được đăng ký trực tiếp thông qua các phương thức <code>Map*</code> trên đối tượng <code>WebApplication</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Đăng ký endpoint: GET /  →  trả về chuỗi "Welcome!"
+app.MapGet("/", () =&gt; "Welcome!");
+
+// Đăng ký endpoint: GET /employees  →  trả về danh sách nhân viên
+app.MapGet("/employees", () =&gt; EmployeesRepository.GetEmployees());
+
+// Đăng ký endpoint: POST /employees
+app.MapPost("/employees", (Employee emp) =&gt; {
+    EmployeesRepository.AddEmployee(emp);
+    return Results.Created($"/employees/{emp.Id}", emp);
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Các phương thức <code>MapGet</code>, <code>MapPost</code>, <code>MapPut</code>, <code>MapDelete</code>, <code>MapPatch</code> tương ứng với từng HTTP method. Có thể dùng <code>MapMethods</code> khi muốn hỗ trợ nhiều method cùng lúc.</p>
+      </div>
+
+      <h3>Cách hoạt động nội bộ</h3>
+      <p>Mỗi lần gọi <code>Map*</code>, ASP.NET Core tạo một đối tượng <code>RouteEndpoint</code> chứa route pattern và delegate. Toàn bộ các endpoint được lưu trong <code>EndpointDataSource</code> — một "kho" được routing middleware tra cứu khi có request đến.</p>
+
+      <table class="tbl">
+        <tr><th>Phương thức</th><th>HTTP Method</th><th>Ví dụ URL</th></tr>
+        <tr><td><code>MapGet</code></td><td>GET</td><td><code>/employees</code></td></tr>
+        <tr><td><code>MapPost</code></td><td>POST</td><td><code>/employees</code></td></tr>
+        <tr><td><code>MapPut</code></td><td>PUT</td><td><code>/employees/{id}</code></td></tr>
+        <tr><td><code>MapDelete</code></td><td>DELETE</td><td><code>/employees/{id}</code></td></tr>
+        <tr><td><code>MapPatch</code></td><td>PATCH</td><td><code>/employees/{id}</code></td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Routing Middleware</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Use the routing middleware</em></p>
+
+      <p>Định nghĩa endpoint chỉ là bước đầu — ứng dụng còn cần <strong>routing middleware</strong> để thực sự tra cứu và điều phối request đến đúng handler.</p>
+
+      <h3>Hai middleware routing cốt lõi</h3>
+      <p>Routing trong ASP.NET Core được chia làm hai middleware riêng biệt, thêm theo đúng thứ tự:</p>
+
+      <ol class="steps">
+        <li><strong><code>UseRouting()</code></strong> — phân tích URL của request, so khớp với danh sách endpoint đã đăng ký, rồi gắn kết quả vào <code>HttpContext.GetEndpoint()</code>. Middleware này chỉ <em>chọn</em> endpoint, chưa thực thi.</li>
+        <li><strong><code>UseEndpoints()</code></strong> (hoặc đặt <code>Map*</code> sau pipeline) — thực sự <em>gọi</em> endpoint handler đã được chọn.</li>
+      </ol>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// 1. Middleware routing: phân tích URL và chọn endpoint
+app.UseRouting();
+
+// 2. Middleware khác có thể đặt ở đây (auth, cors, v.v.)
+// Chúng có thể đọc endpoint đã chọn qua context.GetEndpoint()
+
+// 3. Thực thi endpoint handler
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapGet("/", async (HttpContext context) =&gt;
+    {
+        await context.Response.WriteAsync("Welcome to the home page.");
+    });
+
+    endpoints.MapGet("/employees", async (HttpContext context) =&gt;
+    {
+        var employees = EmployeesRepository.GetEmployees();
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(employees);
+    });
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Trong .NET 6+ với Minimal API, <code>WebApplication</code> tự động thêm <code>UseRouting()</code> và <code>UseEndpoints()</code> khi bạn gọi <code>app.MapGet(...)</code> trực tiếp — bạn không cần gọi tường minh trong hầu hết trường hợp. Tuy nhiên, khi cần đặt middleware phụ thuộc vào endpoint (như authorization) <em>giữa</em> hai bước routing, bạn phải gọi tường minh theo đúng thứ tự.</p>
+      </div>
+
+      <h3>Tại sao thứ tự quan trọng?</h3>
+      <p>Vì middleware pipeline chạy <strong>tuần tự</strong>, middleware nằm <em>giữa</em> <code>UseRouting()</code> và <code>UseEndpoints()</code> có thể truy cập thông tin endpoint đã chọn. Đây là nền tảng để authorization middleware hoạt động: nó kiểm tra policy của endpoint được chọn trước khi cho phép handler chạy.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — thứ tự chuẩn với auth</span><span class="lang">csharp</span></div>
+        <pre><code>app.UseRouting();       // 1. Chọn endpoint
+app.UseAuthentication(); // 2. Xác thực danh tính
+app.UseAuthorization();  // 3. Kiểm tra quyền truy cập endpoint
+app.MapGet("/secret", [Authorize] () =&gt; "Bí mật!");</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Middleware 404 Not Found</h2>
+      <p class="subvideo-meta">Bài 3 · <em>404 Not Found Middleware component</em></p>
+
+      <p>Điều gì xảy ra khi routing middleware <em>không tìm thấy</em> endpoint nào khớp với request? Câu trả lời là: một middleware mặc định sẽ tự động trả về HTTP <strong>404 Not Found</strong>.</p>
+
+      <h3>Cơ chế hoạt động</h3>
+      <p>ASP.NET Core cài sẵn một middleware cuối pipeline xử lý trường hợp không có endpoint nào khớp. Middleware này:</p>
+      <ul>
+        <li>Đặt status code = <strong>404</strong>.</li>
+        <li>Trả về body rỗng hoặc trang lỗi mặc định.</li>
+        <li>Không ném exception — đây là hành vi <em>expected</em> của framework.</li>
+      </ul>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Bạn không thấy middleware 404 trong code vì nó được thêm <strong>ngầm định</strong> bởi framework. Tuy nhiên nếu muốn tùy chỉnh trang 404 (ví dụ trả JSON thay vì trang HTML trắng), bạn có thể dùng <code>app.UseStatusCodePages()</code> hoặc viết middleware tùy chỉnh.</p>
+      </div>
+
+      <h3>Tùy chỉnh trang 404</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Tùy chỉnh phản hồi cho các status code lỗi
+app.UseStatusCodePages(async statusCodeContext =&gt;
+{
+    var response = statusCodeContext.HttpContext.Response;
+    if (response.StatusCode == 404)
+    {
+        response.ContentType = "application/json";
+        await response.WriteAsJsonAsync(new
+        {
+            error = "Không tìm thấy tài nguyên yêu cầu.",
+            statusCode = 404
+        });
+    }
+});
+
+app.MapGet("/employees", () =&gt; EmployeesRepository.GetEmployees());
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> <code>UseStatusCodePages()</code> chỉ can thiệp khi response chưa có body. Nếu handler đã ghi nội dung vào response trước khi set status code 404, middleware này sẽ không được kích hoạt.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Route Parameter bắt buộc</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Required Route Parameters</em></p>
+
+      <p>Thay vì dùng query string (<code>/employees?id=1</code>), routing cho phép nhúng giá trị trực tiếp vào URL (<code>/employees/1</code>). Phần giá trị động đó gọi là <strong>route parameter</strong>.</p>
+
+      <h3>Cú pháp khai báo</h3>
+      <p>Route parameter được đặt trong cặp ngoặc nhọn <code>{tên}</code> trong route template:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    // {id} là route parameter bắt buộc
+    // URL khớp: /employees/1, /employees/42, ...
+    endpoints.MapGet("/employees/{id}", async (HttpContext context) =&gt;
+    {
+        // Đọc giá trị route parameter
+        var id = context.Request.RouteValues["id"];
+        var employeeId = int.Parse(id!.ToString()!);
+
+        var employee = EmployeesRepository.GetEmployeeById(employeeId);
+
+        if (employee is not null)
+        {
+            await context.Response.WriteAsJsonAsync(employee);
+        }
+        else
+        {
+            context.Response.StatusCode = 404;
+            await context.Response.WriteAsync("Không tìm thấy nhân viên.");
+        }
+    });
+});</code></pre>
+      </div>
+
+      <h3>Đọc parameter trong Minimal API hiện đại</h3>
+      <p>Kể từ .NET 6, Minimal API hỗ trợ <strong>parameter binding</strong> trực tiếp từ lambda — gọn hơn nhiều so với đọc qua <code>RouteValues</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — cách hiện đại</span><span class="lang">csharp</span></div>
+        <pre><code>// ASP.NET Core tự động bind {id} vào tham số int id
+app.MapGet("/employees/{id}", (int id) =&gt;
+{
+    var employee = EmployeesRepository.GetEmployeeById(id);
+    return employee is not null
+        ? Results.Ok(employee)
+        : Results.NotFound("Không tìm thấy nhân viên.");
+});</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> Route parameter là <strong>bắt buộc</strong> theo mặc định — nếu URL thiếu segment tương ứng, route sẽ không khớp và routing middleware sẽ tìm endpoint khác (hoặc trả 404). Đây là điểm khác biệt quan trọng so với query string (có thể bỏ qua).</p>
+      </div>
+
+      <h3>So sánh Query String và Route Parameter</h3>
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>Query String</th><th>Route Parameter</th></tr>
+        <tr><td>Cú pháp URL</td><td><code>/employees?id=1</code></td><td><code>/employees/1</code></td></tr>
+        <tr><td>RESTful</td><td>Kém (dùng cho filter/paging)</td><td>Tốt (định danh tài nguyên)</td></tr>
+        <tr><td>Bắt buộc</td><td>Không (có thể bỏ qua)</td><td>Có (route không khớp nếu thiếu)</td></tr>
+        <tr><td>Caching</td><td>Phức tạp hơn</td><td>Đơn giản hơn</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Route Parameter có giá trị mặc định</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Route parameters with default values</em></p>
+
+      <p>Đôi khi bạn muốn route parameter có <em>một giá trị ngầm định</em> khi người dùng không cung cấp segment đó trong URL. Đây gọi là <strong>default value</strong> cho route parameter.</p>
+
+      <h3>Cú pháp</h3>
+      <p>Thêm <code>=giá_trị</code> ngay sau tên parameter trong template:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// {size=medium} — nếu không có segment, size = "medium"
+// URL khớp: /products/small, /products/large, /products  (→ size = "medium")
+app.MapGet("/products/{size=medium}", (string size) =&gt;
+{
+    return Results.Ok($"Hiển thị sản phẩm kích cỡ: {size}");
+});
+
+// Ví dụ thực tế: phân trang với trang mặc định = 1
+// URL: /employees/page/2  hoặc  /employees/page  (→ page = 1)
+app.MapGet("/employees/page/{page=1}", (int page) =&gt;
+{
+    int pageSize = 10;
+    var employees = EmployeesRepository.GetEmployees()
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize);
+    return Results.Ok(employees);
+});</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Khi dùng default value, segment đó trở nên <em>không bắt buộc</em> — URL thiếu segment vẫn khớp và parameter nhận giá trị mặc định. Đây là khác biệt quan trọng so với parameter bắt buộc.</p>
+      </div>
+
+      <h3>Nhiều parameter với default value</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// /report/2024/6  → year=2024, month=6
+// /report/2024    → year=2024, month=1
+// /report         → year=2024 (năm hiện tại), month=1
+app.MapGet("/report/{year=2024}/{month=1}", (int year, int month) =&gt;
+{
+    return Results.Ok($"Báo cáo tháng {month}/{year}");
+});</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Các parameter có default value phải đặt <strong>sau</strong> parameter bắt buộc trong template. Đặt ngược lại sẽ gây lỗi khi khởi động ứng dụng.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Route Parameter tùy chọn</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Optional Route Parameters</em></p>
+
+      <p><strong>Optional parameter</strong> tương tự default-value parameter ở chỗ segment có thể vắng mặt trong URL — nhưng khác ở điểm quan trọng: khi vắng mặt, parameter nhận giá trị <code>null</code> thay vì một giá trị mặc định cụ thể.</p>
+
+      <h3>Cú pháp</h3>
+      <p>Thêm dấu hỏi <code>?</code> sau tên parameter:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// {name?} — segment tùy chọn, có thể thiếu
+// URL khớp: /greet/Alice  (name = "Alice")
+// URL khớp: /greet        (name = null)
+app.MapGet("/greet/{name?}", (string? name) =&gt;
+{
+    if (name is null)
+        return Results.Ok("Xin chào, khách!");
+    return Results.Ok($"Xin chào, {name}!");
+});</code></pre>
+      </div>
+
+      <h3>So sánh ba loại parameter</h3>
+      <table class="tbl">
+        <tr><th>Loại</th><th>Cú pháp</th><th>Khi thiếu segment</th><th>Kiểu C#</th></tr>
+        <tr><td>Bắt buộc</td><td><code>{id}</code></td><td>Route không khớp</td><td><code>int id</code></td></tr>
+        <tr><td>Có default</td><td><code>{size=medium}</code></td><td>Nhận giá trị mặc định</td><td><code>string size</code></td></tr>
+        <tr><td>Tùy chọn</td><td><code>{name?}</code></td><td>Nhận <code>null</code></td><td><code>string? name</code></td></tr>
+      </table>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — ví dụ tìm kiếm nhân viên</span><span class="lang">csharp</span></div>
+        <pre><code>// Tìm nhân viên theo tên (tùy chọn) và vị trí (tùy chọn)
+// /employees/search            → trả toàn bộ
+// /employees/search/John       → lọc theo tên
+// /employees/search/John/Manager → lọc cả tên lẫn chức vụ
+app.MapGet("/employees/search/{name?}/{position?}",
+    (string? name, string? position) =&gt;
+    {
+        var result = EmployeesRepository.GetEmployees().AsEnumerable();
+        if (name is not null)
+            result = result.Where(e =&gt; e.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+        if (position is not null)
+            result = result.Where(e =&gt; e.Position == position);
+        return Results.Ok(result.ToList());
+    });</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Optional parameter chỉ có thể đặt ở <strong>cuối</strong> route template. Không thể có parameter bắt buộc sau optional parameter vì sẽ tạo ra sự mơ hồ trong quá trình khớp route.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Route Constraints</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Parameter Constraints</em></p>
+
+      <p><strong>Route constraint</strong> (ràng buộc route) cho phép bạn chỉ định điều kiện mà giá trị của route parameter phải thỏa mãn để route đó được chọn. Đây là cơ chế giúp phân biệt các route có cùng template nhưng kiểu dữ liệu khác nhau, đồng thời tự động từ chối các giá trị không hợp lệ.</p>
+
+      <h3>Tại sao cần Route Constraints?</h3>
+      <p>Giả sử bạn có hai endpoint:</p>
+      <ul>
+        <li><code>/employees/{id}</code> — lấy nhân viên theo ID (số nguyên)</li>
+        <li><code>/employees/{name}</code> — lấy nhân viên theo tên (chuỗi)</li>
+      </ul>
+      <p>Không có constraint, routing sẽ không biết chọn endpoint nào cho URL <code>/employees/42</code> hay <code>/employees/John</code> — xảy ra lỗi <em>ambiguous match</em>. Route constraint giải quyết vấn đề này:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    // Chỉ khớp khi {id} là số nguyên (int)
+    // /employees/42   → endpoint này
+    endpoints.MapGet("/employees/{id:int}", async (HttpContext context) =&gt;
+    {
+        var id = int.Parse(context.Request.RouteValues["id"]!.ToString()!);
+        var employee = EmployeesRepository.GetEmployeeById(id);
+        if (employee is not null)
+            await context.Response.WriteAsJsonAsync(employee);
+        else
+        {
+            context.Response.StatusCode = 404;
+            await context.Response.WriteAsync("Không tìm thấy.");
+        }
+    });
+
+    // Chỉ khớp khi {name} là chuỗi (mặc định) — tất cả giá trị không phải int
+    // /employees/John → endpoint này
+    endpoints.MapGet("/employees/{name:alpha}", async (HttpContext context) =&gt;
+    {
+        var name = context.Request.RouteValues["name"]!.ToString()!;
+        var employees = EmployeesRepository.GetEmployees()
+            .Where(e =&gt; e.Name.Contains(name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        await context.Response.WriteAsJsonAsync(employees);
+    });
+});</code></pre>
+      </div>
+
+      <h3>Các constraint dựng sẵn phổ biến</h3>
+      <table class="tbl">
+        <tr><th>Constraint</th><th>Ý nghĩa</th><th>Ví dụ</th></tr>
+        <tr><td><code>int</code></td><td>Số nguyên 32-bit</td><td><code>{id:int}</code></td></tr>
+        <tr><td><code>long</code></td><td>Số nguyên 64-bit</td><td><code>{id:long}</code></td></tr>
+        <tr><td><code>double</code></td><td>Số thực</td><td><code>{price:double}</code></td></tr>
+        <tr><td><code>bool</code></td><td>true/false</td><td><code>{flag:bool}</code></td></tr>
+        <tr><td><code>guid</code></td><td>GUID hợp lệ</td><td><code>{id:guid}</code></td></tr>
+        <tr><td><code>alpha</code></td><td>Chỉ chữ cái a-z, A-Z</td><td><code>{name:alpha}</code></td></tr>
+        <tr><td><code>minlength(n)</code></td><td>Chuỗi tối thiểu n ký tự</td><td><code>{code:minlength(3)}</code></td></tr>
+        <tr><td><code>maxlength(n)</code></td><td>Chuỗi tối đa n ký tự</td><td><code>{code:maxlength(10)}</code></td></tr>
+        <tr><td><code>min(n)</code></td><td>Số nguyên tối thiểu n</td><td><code>{age:min(18)}</code></td></tr>
+        <tr><td><code>max(n)</code></td><td>Số nguyên tối đa n</td><td><code>{age:max(120)}</code></td></tr>
+        <tr><td><code>range(m,n)</code></td><td>Số nguyên trong khoảng [m, n]</td><td><code>{month:range(1,12)}</code></td></tr>
+        <tr><td><code>regex(expr)</code></td><td>Khớp biểu thức chính quy</td><td><code>{zip:regex(^\d{{5}}$)}</code></td></tr>
+      </table>
+
+      <h3>Kết hợp nhiều constraint</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// {id} phải là int VÀ tối thiểu 1
+app.MapGet("/employees/{id:int:min(1)}", (int id) =&gt;
+{
+    var emp = EmployeesRepository.GetEmployeeById(id);
+    return emp is not null ? Results.Ok(emp) : Results.NotFound();
+});</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Route constraint chỉ dùng để <strong>chọn endpoint</strong> (routing), không phải để <strong>validate dữ liệu nghiệp vụ</strong>. Ví dụ <code>:min(1)</code> ngăn URL <code>/employees/0</code> khớp route, nhưng không thay thế được validation logic trong handler (như kiểm tra employee tồn tại không).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Custom Route Constraints</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Custom Parameter Constraints</em></p>
+
+      <p>Khi các constraint dựng sẵn không đủ đáp ứng yêu cầu, bạn có thể tự viết <strong>custom route constraint</strong> bằng cách implement interface <code>IRouteConstraint</code>.</p>
+
+      <h3>Tình huống thực tế</h3>
+      <p>Giả sử ứng dụng quản lý nhân viên chỉ hỗ trợ hai chức vụ: <code>engineer</code> và <code>manager</code>. Bạn muốn route <code>/employees/positions/{position}</code> chỉ khớp khi <code>{position}</code> thuộc hai giá trị đó.</p>
+
+      <h3>Bước 1 — Implement IRouteConstraint</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Constraints/PositionConstraint.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Routing;
+
+namespace WebApp.Constraints;
+
+public class PositionConstraint : IRouteConstraint
+{
+    // Danh sách chức vụ hợp lệ
+    private static readonly string[] ValidPositions = { "engineer", "manager" };
+
+    public bool Match(
+        HttpContext? httpContext,
+        IRouter? route,
+        string routeKey,
+        RouteValueDictionary values,
+        RouteDirection routeDirection)
+    {
+        // Lấy giá trị của parameter từ route values
+        if (!values.TryGetValue(routeKey, out var routeValue))
+            return false;
+
+        var position = routeValue?.ToString();
+
+        // Khớp khi position nằm trong danh sách hợp lệ (không phân biệt hoa thường)
+        return ValidPositions.Contains(
+            position, StringComparer.OrdinalIgnoreCase);
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 2 — Đăng ký constraint vào DI</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApp.Constraints;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký custom constraint với tên "position"
+builder.Services.Configure&lt;RouteOptions&gt;(options =&gt;
+{
+    options.ConstraintMap.Add("position", typeof(PositionConstraint));
+});
+
+var app = builder.Build();
+
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    // Dùng constraint tùy chỉnh: {pos:position}
+    // /employees/positions/engineer → khớp
+    // /employees/positions/manager  → khớp
+    // /employees/positions/intern   → KHÔNG khớp (404)
+    endpoints.MapGet("/employees/positions/{pos:position}",
+        async (HttpContext context) =&gt;
+        {
+            var position = context.Request.RouteValues["pos"]!.ToString()!;
+            var employees = EmployeesRepository.GetEmployees()
+                .Where(e =&gt; e.Position.Equals(position, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            await context.Response.WriteAsJsonAsync(employees);
+        });
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Tên đăng ký trong <code>ConstraintMap</code> (<code>"position"</code>) chính là tên dùng trong route template (<code>:position</code>). Tên này phải duy nhất và không trùng với constraint dựng sẵn.</p>
+      </div>
+
+      <h3>Khi nào nên dùng Custom Constraint?</h3>
+      <ul>
+        <li>Khi giá trị route cần khớp một tập hợp giá trị định sẵn (enum-like).</li>
+        <li>Khi cần logic kiểm tra phức tạp hơn regex (ví dụ: tra cứu database, kiểm tra định dạng mã tùy chỉnh).</li>
+        <li>Khi muốn tái sử dụng cùng logic constraint ở nhiều route khác nhau.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Bài tập: CRUD với Routing</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Assignment 3 — Implement CRUD operations with routing</em></p>
+
+      <p>Đây là bài tập thực hành. Bạn sẽ xây dựng lại toàn bộ CRUD cho <code>Employee</code> — nhưng lần này dùng <strong>route parameters</strong> thay vì query string.</p>
+
+      <h3>Yêu cầu</h3>
+      <ol class="steps">
+        <li>Tạo project ASP.NET Core Empty mới (hoặc dùng project từ chương trước).</li>
+        <li>Thêm <code>UseRouting()</code> và <code>UseEndpoints()</code> vào pipeline.</li>
+        <li>Tạo model <code>Employee</code> và <code>EmployeesRepository</code> (in-memory).</li>
+        <li>Implement các endpoint theo bảng dưới đây.</li>
+        <li>Dùng route parameter <code>{id:int}</code> thay vì query string <code>?id=</code>.</li>
+      </ol>
+
+      <table class="tbl">
+        <tr><th>Method</th><th>URL</th><th>Hành động</th></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/</code></td><td>Trang chào mừng</td></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/employees</code></td><td>Lấy danh sách tất cả nhân viên</td></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/employees/{id:int}</code></td><td>Lấy thông tin một nhân viên theo ID</td></tr>
+        <tr><td><span class="tag">POST</span></td><td><code>/employees</code></td><td>Thêm nhân viên mới (body JSON)</td></tr>
+        <tr><td><span class="tag">PUT</span></td><td><code>/employees</code></td><td>Cập nhật nhân viên (body JSON có ID)</td></tr>
+        <tr><td><span class="tag">DELETE</span></td><td><code>/employees/{id:int}</code></td><td>Xóa nhân viên theo ID (cần header Authorization)</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Thử implement trước khi xem đáp án ở bài tiếp theo. Đây là bước thiết yếu để củng cố kiến thức về routing.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Đáp án bài tập CRUD</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Assignment 3 (Answer) — Implement CRUD operations with routing</em></p>
+
+      <p>Dưới đây là đáp án đầy đủ, trích từ source code thật của khóa học.</p>
+
+      <h3>Model: Employee</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Employee.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models;
+
+public class Employee
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public string Position { get; set; }
+    public double Salary { get; set; }
+
+    public Employee(int id, string name, string position, double salary)
+    {
+        Id = id;
+        Name = name;
+        Position = position;
+        Salary = salary;
+    }
+}</code></pre>
+      </div>
+
+      <h3>Repository in-memory</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/EmployeesRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.Models;
+
+public static class EmployeesRepository
+{
+    private static List&lt;Employee&gt; employees = new()
+    {
+        new Employee(1, "John Doe",   "Engineer",   60000),
+        new Employee(2, "Jane Smith", "Manager",    75000),
+        new Employee(3, "Sam Brown",  "Technician", 50000)
+    };
+
+    public static List&lt;Employee&gt; GetEmployees() =&gt; employees;
+
+    public static Employee? GetEmployeeById(int id) =&gt;
+        employees.FirstOrDefault(x =&gt; x.Id == id);
+
+    public static void AddEmployee(Employee? employee)
+    {
+        if (employee is not null) employees.Add(employee);
+    }
+
+    public static bool UpdateEmployee(Employee? employee)
+    {
+        if (employee is null) return false;
+        var emp = employees.FirstOrDefault(x =&gt; x.Id == employee.Id);
+        if (emp is null) return false;
+        emp.Name = employee.Name;
+        emp.Position = employee.Position;
+        emp.Salary = employee.Salary;
+        return true;
+    }
+
+    public static bool DeleteEmployee(int id)
+    {
+        var employee = employees.FirstOrDefault(x =&gt; x.Id == id);
+        if (employee is null) return false;
+        employees.Remove(employee);
+        return true;
+    }
+}</code></pre>
+      </div>
+
+      <h3>Program.cs — đầy đủ CRUD với routing</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Text.Json;
+using WebApp.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    // GET /  →  trang chào
+    endpoints.MapGet("/", async (HttpContext context) =&gt;
+    {
+        await context.Response.WriteAsync("Welcome to the home page.");
+    });
+
+    // GET /employees  →  danh sách tất cả nhân viên
+    endpoints.MapGet("/employees", async (HttpContext context) =&gt;
+    {
+        var employees = EmployeesRepository.GetEmployees();
+        context.Response.ContentType = "text/html";
+        await context.Response.WriteAsync("&lt;h2&gt;Employees&lt;/h2&gt;&lt;ul&gt;");
+        foreach (var employee in employees)
+        {
+            await context.Response.WriteAsync(
+                $"&lt;li&gt;&lt;b&gt;{employee.Name}&lt;/b&gt;: {employee.Position}&lt;/li&gt;");
+        }
+        await context.Response.WriteAsync("&lt;/ul&gt;");
+    });
+
+    // GET /employees/{id:int}  →  thông tin một nhân viên
+    endpoints.MapGet("/employees/{id:int}", async (HttpContext context) =&gt;
+    {
+        var id = int.Parse(context.Request.RouteValues["id"]!.ToString()!);
+        var employee = EmployeesRepository.GetEmployeeById(id);
+
+        context.Response.ContentType = "text/html";
+        if (employee is not null)
+        {
+            await context.Response.WriteAsync("&lt;h2&gt;Employee&lt;/h2&gt;");
+            await context.Response.WriteAsync($"Name: {employee.Name}&lt;br/&gt;");
+            await context.Response.WriteAsync($"Position: {employee.Position}&lt;br/&gt;");
+            await context.Response.WriteAsync($"Salary: {employee.Salary}&lt;br/&gt;");
+        }
+        else
+        {
+            context.Response.StatusCode = 404;
+            await context.Response.WriteAsync("Employee not found.");
+        }
+    });
+
+    // POST /employees  →  thêm nhân viên mới
+    endpoints.MapPost("/employees", async (HttpContext context) =&gt;
+    {
+        using var reader = new StreamReader(context.Request.Body);
+        var body = await reader.ReadToEndAsync();
+        try
+        {
+            var employee = JsonSerializer.Deserialize&lt;Employee&gt;(body);
+            if (employee is null || employee.Id &lt;= 0)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+            EmployeesRepository.AddEmployee(employee);
+            context.Response.StatusCode = 201;
+            await context.Response.WriteAsync("Employee added successfully.");
+        }
+        catch (Exception ex)
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsync(ex.Message);
+        }
+    });
+
+    // PUT /employees  →  cập nhật nhân viên (JSON body chứa Id)
+    endpoints.MapPut("/employees", async (HttpContext context) =&gt;
+    {
+        using var reader = new StreamReader(context.Request.Body);
+        var body = await reader.ReadToEndAsync();
+        var employee = JsonSerializer.Deserialize&lt;Employee&gt;(body);
+
+        if (EmployeesRepository.UpdateEmployee(employee))
+        {
+            context.Response.StatusCode = 204;
+        }
+        else
+        {
+            context.Response.StatusCode = 404;
+            await context.Response.WriteAsync("Employee not found.");
+        }
+    });
+
+    // DELETE /employees/{id:int}  →  xóa nhân viên (cần header Authorization)
+    endpoints.MapDelete("/employees/{id}", async (HttpContext context) =&gt;
+    {
+        var id = int.Parse(context.Request.RouteValues["id"]!.ToString()!);
+
+        if (context.Request.Headers["Authorization"] == "frank")
+        {
+            if (EmployeesRepository.DeleteEmployee(id))
+            {
+                await context.Response.WriteAsync("Employee deleted successfully.");
+            }
+            else
+            {
+                context.Response.StatusCode = 404;
+                await context.Response.WriteAsync("Employee not found.");
+            }
+        }
+        else
+        {
+            context.Response.StatusCode = 401;
+            await context.Response.WriteAsync("Unauthorized.");
+        }
+    });
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Kiểm thử bằng cURL</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code># Lấy tất cả nhân viên
+curl http://localhost:5000/employees
+
+# Lấy nhân viên ID = 1
+curl http://localhost:5000/employees/1
+
+# Thêm nhân viên mới
+curl -X POST http://localhost:5000/employees \
+  -H "Content-Type: application/json" \
+  -d '{"Id":4,"Name":"Alice","Position":"Designer","Salary":55000}'
+
+# Cập nhật nhân viên
+curl -X PUT http://localhost:5000/employees \
+  -H "Content-Type: application/json" \
+  -d '{"Id":1,"Name":"John Doe","Position":"Senior Engineer","Salary":80000}'
+
+# Xóa nhân viên ID = 3 (cần header Authorization)
+curl -X DELETE http://localhost:5000/employees/3 \
+  -H "Authorization: frank"</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span> Điểm mấu chốt của bài tập này: route parameter <code>{id:int}</code> giúp URL RESTful hơn (<code>/employees/1</code> thay vì <code>/employees?id=1</code>), đồng thời constraint <code>:int</code> tự động từ chối các URL có ID không phải số nguyên — không cần validate thủ công trong handler.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-03.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">03 · Middleware Pipeline</div>
+      </a>
+      <a class="next" href="lesson-05.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">05 · Minimal API — Model Binding &amp; Validation</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

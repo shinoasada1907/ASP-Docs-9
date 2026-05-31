@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 28 — Securing Web App | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 28 — Securing Web App</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Tổng quan Authentication &amp; Authorization</a></li>
+      <li><a href="#s2">2. Authentication Ticket là gì</a></li>
+      <li><a href="#s3">3. Tạo Authentication Ticket (Sign In)</a></li>
+      <li><a href="#s4">4. Giải mã Authentication Ticket</a></li>
+      <li><a href="#s5">5. Authorization dựa trên Authentication Ticket</a></li>
+      <li><a href="#s6">6. Đăng xuất (Sign Out)</a></li>
+      <li><a href="#s7">7. Bật HTTPS</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 28</span>
+      <h1>Securing Web App (Bảo mật ứng dụng Web)</h1>
+      <p class="lead">Triển khai toàn bộ vòng đời bảo mật cho ứng dụng web MVC: Cookie Authentication, tạo và giải mã authentication ticket, phân quyền theo claim, đăng xuất và bật HTTPS.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Tổng quan Authentication &amp; Authorization</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Authentication and Authorization Overview</em></p>
+
+      <p>Chương này tập trung vào hai khái niệm cốt lõi của bảo mật ứng dụng web:</p>
+      <ul>
+        <li><strong>Authentication (Xác thực):</strong> xác định <em>người dùng là ai</em>. Người dùng cung cấp thông tin đăng nhập (email + mật khẩu), server xác minh và cấp một <strong>authentication ticket</strong> (thẻ xác thực).</li>
+        <li><strong>Authorization (Phân quyền):</strong> xác định <em>người dùng được làm gì</em>. Sau khi đã xác thực, mỗi request tiếp theo gửi kèm authentication ticket; server kiểm tra ticket đó để quyết định có cho phép truy cập tài nguyên hay không.</li>
+      </ul>
+
+      <h3>Luồng hoạt động tổng thể</h3>
+      <ol class="steps">
+        <li>Người dùng điền thông tin đăng nhập và gửi form Login.</li>
+        <li>Server xác minh thông tin. Nếu hợp lệ, server <strong>tạo authentication ticket</strong> và trả về cho trình duyệt dưới dạng cookie (hoặc JWT).</li>
+        <li>Với mỗi request tiếp theo, trình duyệt <strong>tự động đính kèm cookie</strong> vào HTTP header.</li>
+        <li>Middleware <code>Authentication</code> đọc cookie, giải mã thành đối tượng <code>ClaimsPrincipal</code> và gán vào <code>HttpContext.User</code>.</li>
+        <li>Middleware <code>Authorization</code> kiểm tra <code>HttpContext.User</code>: nếu thoả điều kiện (đã đăng nhập, đúng role...) thì cho phép; ngược lại trả về 401/403.</li>
+        <li>Khi đăng xuất, server <strong>xoá cookie</strong> khỏi trình duyệt — ticket không còn tồn tại, người dùng phải đăng nhập lại.</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🗝️</span><strong>Ba nhóm việc chính:</strong> (1) <em>Tạo</em> authentication ticket khi đăng nhập, (2) <em>Giải mã</em> ticket trong mỗi request (authentication middleware), (3) <em>Phân quyền</em> dựa trên thông tin trong ticket (authorization middleware).</p>
+      </div>
+
+      <h3>Hai scheme phổ biến</h3>
+      <table class="tbl">
+        <tr><th>Scheme</th><th>Đặc điểm</th><th>Dùng cho</th></tr>
+        <tr><td><strong>Cookie Authentication</strong></td><td>Ticket lưu trong cookie trình duyệt, server-side session-like</td><td>Web App (MVC, Razor Pages)</td></tr>
+        <tr><td><strong>JWT (Bearer Token)</strong></td><td>Ticket là chuỗi JSON Web Token trong Authorization header</td><td>Web API, SPA, mobile</td></tr>
+      </table>
+      <p>Chương này tập trung vào <strong>Cookie Authentication</strong> — phù hợp nhất cho ứng dụng web MVC truyền thống. JWT sẽ được trình bày trong chương tiếp theo (Securing Web API).</p>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Authentication Ticket là gì</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Authentication Ticket</em></p>
+
+      <p><strong>Authentication ticket</strong> là một tập hợp thông tin được mã hoá và gửi đến trình duyệt sau khi đăng nhập thành công. Nó hoạt động giống như tấm vé vào cổng: bạn mua vé một lần rồi dùng vé đó để vào sự kiện — tương tự, bạn đăng nhập một lần rồi dùng ticket cho mọi request tiếp theo.</p>
+
+      <h3>Ticket chứa những gì?</h3>
+      <table class="tbl">
+        <tr><th>Thành phần</th><th>Vai trò</th><th>Kiểu trong ASP.NET Core</th></tr>
+        <tr><td><strong>User information (Claims)</strong></td><td>Thông tin người dùng: tên, email, role, quyền...</td><td><code>Claim</code>, <code>ClaimsIdentity</code>, <code>ClaimsPrincipal</code></td></tr>
+        <tr><td><strong>Expiry</strong></td><td>Thời điểm ticket hết hạn</td><td><code>AuthenticationTicket.Properties.ExpiresUtc</code></td></tr>
+        <tr><td><strong>Authentication Scheme</strong></td><td>Cách ticket được tạo/giải mã (Cookie hay JWT?)</td><td>Tên scheme đăng ký: <code>"CookieScheme"</code></td></tr>
+      </table>
+
+      <h3>Mô hình Claims trong ASP.NET Core</h3>
+      <p>Thông tin người dùng được biểu diễn theo cấu trúc 3 tầng:</p>
+      <ul>
+        <li><code>Claim</code> — một cặp <em>kiểu/giá trị</em> đơn lẻ, ví dụ <code>Name = "admin@company.com"</code>, <code>Role = "Admin"</code>.</li>
+        <li><code>ClaimsIdentity</code> — tập hợp các <code>Claim</code> tạo thành một "danh tính". Phải chỉ định <code>authenticationType</code> (tên scheme) thì <code>IsAuthenticated</code> mới trả về <code>true</code>.</li>
+        <li><code>ClaimsPrincipal</code> — đối tượng đại diện cho người dùng, có thể chứa nhiều <code>ClaimsIdentity</code>. Đây chính là <code>HttpContext.User</code>.</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Cấu trúc Claims</span><span class="lang">csharp</span></div>
+        <pre><code>// Một Claim đơn lẻ
+var claim = new Claim("Role", "Admin");
+
+// ClaimsIdentity = tập hợp claims + authentication scheme
+var identity = new ClaimsIdentity(
+    new[] { claim },
+    authenticationType: "CookieScheme"   // bắt buộc để IsAuthenticated = true
+);
+
+// ClaimsPrincipal = đại diện người dùng
+var principal = new ClaimsPrincipal(identity);
+
+// Kiểm tra
+bool isAuth = principal.Identity?.IsAuthenticated;   // true
+string? name = principal.Identity?.Name;             // lấy claim ClaimTypes.Name</code></pre>
+      </div>
+
+      <h3>Tại sao cần Authentication Scheme?</h3>
+      <p>Khi ticket quay về server, middleware Authentication cần biết <em>cách giải mã</em> nó — là Cookie hay JWT. <strong>Authentication scheme</strong> chính là tên định danh cho cặp "cách tạo / cách giải mã" đó. Scheme được đăng ký trong <code>Program.cs</code> và phải khớp với tên dùng khi gọi <code>SignInAsync</code> / <code>SignOutAsync</code>.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> ASP.NET Core cung cấp hằng số <code>CookieAuthenticationDefaults.AuthenticationScheme</code> có giá trị là chuỗi <code>"Cookies"</code>. Bạn có thể dùng tên tuỳ chỉnh (như <code>"CookieScheme"</code>) miễn là nhất quán.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Tạo Authentication Ticket (Sign In)</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Generate Authentication Ticket</em></p>
+
+      <p>Để tạo authentication ticket, cần làm ba việc: (1) đăng ký dịch vụ Authentication trong <code>Program.cs</code>, (2) tạo <code>ClaimsPrincipal</code> với thông tin người dùng, (3) gọi <code>HttpContext.SignInAsync()</code>.</p>
+
+      <h3>Bước 1 — Đăng ký dịch vụ Authentication trong Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllersWithViews();
+
+// Đăng ký Authentication với scheme "CookieScheme"
+builder.Services.AddAuthentication("CookieScheme")
+    .AddCookie("CookieScheme", options =&gt;
+    {
+        options.Cookie.Name    = "CookieScheme";
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+    });
+
+var app = builder.Build();
+
+app.UseStaticFiles();
+app.UseRouting();
+
+// UseAuthentication PHẢI đứng trước UseAuthorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapDefaultControllerRoute();
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Ở bài này chưa có <code>UseAuthentication()</code> trong pipeline — middleware chưa được thêm vào. Đây là lý do ticket được tạo nhưng <code>HttpContext.User.Identity.IsAuthenticated</code> vẫn trả về <code>false</code> (sẽ sửa ở bài 4).</p>
+      </div>
+
+      <h3>Bước 2 — Tạo ViewModel cho form Login</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Model/CredentialViewModel.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+namespace WebApp.Model
+{
+    public class CredentialViewModel
+    {
+        [Required]
+        [Display(Name = "Email Address")]
+        [EmailAddress]
+        public string? EmailAddress { get; set; }
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string? Password { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 3 — AccountController: xác minh và SignInAsync</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/AccountController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using WebApp.Model;
+
+namespace WebApp.Controllers
+{
+    public class AccountController : Controller
+    {
+        // GET /Account/Login — hiển thị form
+        public IActionResult Login()
+        {
+            return View(new CredentialViewModel());
+        }
+
+        // POST /Account/Login — xử lý đăng nhập
+        [HttpPost]
+        public async Task&lt;IActionResult&gt; Login(CredentialViewModel credential)
+        {
+            if (!ModelState.IsValid)
+                return View(credential);
+
+            // Xác minh thông tin (thực tế nên truy vấn database)
+            if (credential.EmailAddress == "admin@company.com"
+                &amp;&amp; credential.Password == "password")
+            {
+                // 1. Tạo danh sách Claims
+                var claims = new List&lt;Claim&gt;
+                {
+                    new Claim("Name", credential.EmailAddress),
+                    new Claim("Role", "Admin")
+                };
+
+                // 2. Gói claims vào ClaimsIdentity — phải truyền tên scheme
+                var identity = new ClaimsIdentity(claims, "CookieScheme");
+
+                // 3. Tạo ClaimsPrincipal (đại diện người dùng)
+                var userPrincipal = new ClaimsPrincipal(identity);
+
+                // 4. Gọi SignInAsync — tạo cookie chứa authentication ticket
+                await HttpContext.SignInAsync("CookieScheme", userPrincipal);
+
+                return RedirectToAction("Index", "Home");
+            }
+
+            ModelState.AddModelError("Error", "Không thể đăng nhập.");
+            return View(credential);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 4 — Razor View cho trang Login</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Account/Login.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model WebApp.Model.CredentialViewModel
+
+@{
+    ViewBag.Title = "Login";
+}
+
+&lt;h3&gt;Login&lt;/h3&gt;
+
+&lt;form method="post"
+      asp-controller="Account"
+      asp-action="Login"&gt;
+
+    &lt;div asp-validation-summary="All" class="text-danger"&gt;&lt;/div&gt;
+
+    &lt;div class="row mb-3"&gt;
+        &lt;label class="col-2 col-form-label" asp-for="EmailAddress"&gt;&lt;/label&gt;
+        &lt;div class="col-6"&gt;
+            &lt;input asp-for="EmailAddress" class="form-control" /&gt;
+            &lt;span asp-validation-for="EmailAddress" class="text-danger"&gt;&lt;/span&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class="row mb-3"&gt;
+        &lt;label class="col-2 col-form-label" asp-for="Password"&gt;&lt;/label&gt;
+        &lt;div class="col-6"&gt;
+            &lt;input asp-for="Password" class="form-control" /&gt;
+            &lt;span asp-validation-for="Password" class="text-danger"&gt;&lt;/span&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class="row mb-3"&gt;
+        &lt;div class="col-2"&gt;
+            &lt;button type="submit" class="btn btn-primary"&gt;Login&lt;/button&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Sau khi <code>SignInAsync</code> thành công, ASP.NET Core tự động set-cookie trong response. Cookie này được trình duyệt lưu và gửi kèm mọi request tiếp theo trong suốt thời gian <code>ExpireTimeSpan</code> (5 phút trong ví dụ).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Giải mã Authentication Ticket</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Interpret Authentication Ticket</em></p>
+
+      <p>Khi cookie được gửi về server trong request tiếp theo, cần có một middleware để <strong>đọc và giải mã</strong> nó, rồi nạp thông tin người dùng vào <code>HttpContext.User</code>. Đây là nhiệm vụ của <strong>Authentication Middleware</strong>.</p>
+
+      <h3>Thêm UseAuthentication() vào pipeline</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var app = builder.Build();
+
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();   // &lt;-- giải mã ticket, nạp vào HttpContext.User
+// UseAuthorization sẽ thêm ở bài tiếp theo
+
+app.MapDefaultControllerRoute();
+app.Run();</code></pre>
+      </div>
+
+      <h3>Cách hoạt động bên trong</h3>
+      <ol class="steps">
+        <li>Request đến — cookie <code>CookieScheme</code> được đọc từ header.</li>
+        <li>Middleware tra cứu cấu hình scheme <code>"CookieScheme"</code> đã đăng ký.</li>
+        <li>Cookie handler giải mã (decrypt) giá trị cookie thành <code>ClaimsPrincipal</code>.</li>
+        <li><code>HttpContext.User</code> được gán = <code>ClaimsPrincipal</code> đó.</li>
+        <li>Nếu không có cookie hoặc cookie không hợp lệ, <code>HttpContext.User.Identity.IsAuthenticated</code> = <code>false</code>.</li>
+      </ol>
+
+      <h3>Kiểm tra kết quả trong Controller</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/HomeController.cs (minh hoạ debug)</span><span class="lang">csharp</span></div>
+        <pre><code>public IActionResult Index()
+{
+    // Sau khi UseAuthentication() được thêm vào pipeline:
+    var user = HttpContext.User;                            // ClaimsPrincipal
+    bool isAuth   = user.Identity?.IsAuthenticated ?? false; // true nếu đã đăng nhập
+    string? name  = user.Identity?.Name;                    // giá trị claim ClaimTypes.Name
+    string? role  = user.FindFirst("Role")?.Value;          // "Admin" hoặc "User"
+
+    return View();
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <code>HttpContext.User</code> luôn tồn tại (không null) nhưng khi chưa xác thực nó là một <code>ClaimsPrincipal</code> với <code>AnonymousIdentity</code> — <code>IsAuthenticated = false</code>. Chỉ sau khi middleware Authentication giải mã cookie thành công mới là <code>true</code>.</p>
+      </div>
+
+      <h3>Thứ tự middleware là bắt buộc</h3>
+      <table class="tbl">
+        <tr><th>Thứ tự</th><th>Middleware</th><th>Lý do</th></tr>
+        <tr><td>1</td><td><code>UseRouting()</code></td><td>Xác định endpoint đích</td></tr>
+        <tr><td>2</td><td><code>UseAuthentication()</code></td><td>Giải mã ticket → nạp <code>HttpContext.User</code></td></tr>
+        <tr><td>3</td><td><code>UseAuthorization()</code></td><td>Cần <code>HttpContext.User</code> đã được nạp</td></tr>
+        <tr><td>4</td><td><code>MapControllerRoute()</code></td><td>Chuyển đến handler thực sự</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Authorization dựa trên Authentication Ticket</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Authorization based on Authentication Ticket</em></p>
+
+      <p>Sau khi ticket được giải mã và nạp vào <code>HttpContext.User</code>, bước tiếp theo là <strong>phân quyền</strong>: quyết định xem người dùng có được phép truy cập resource hay không. ASP.NET Core hỗ trợ nhiều mức phân quyền.</p>
+
+      <h3>Thêm UseAuthorization() và đăng ký policy</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddAuthentication("CookieScheme")
+    .AddCookie("CookieScheme", options =&gt;
+    {
+        options.LoginPath      = "/Account/Login"; // redirect khi chưa đăng nhập
+        options.Cookie.Name    = "CookieScheme";
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+    });
+
+// Đăng ký authorization policy
+builder.Services.AddAuthorization(options =&gt;
+{
+    options.AddPolicy("AdminOnly", policy =&gt;
+    {
+        policy.RequireClaim("Role", "Admin");  // ticket phải có claim Role=Admin
+    });
+});
+
+// ...
+
+app.UseAuthentication();
+app.UseAuthorization();   // &lt;-- thêm vào pipeline</code></pre>
+      </div>
+
+      <h3>Ba mức phân quyền</h3>
+
+      <h4>Mức 1 — Không yêu cầu xác thực (mặc định)</h4>
+      <p>Controller/action không gắn <code>[Authorize]</code> → bất kỳ ai cũng truy cập được, kể cả chưa đăng nhập.</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/HomeController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Không có [Authorize] → công khai
+public class HomeController : Controller
+{
+    public IActionResult Index() =&gt; View();
+}</code></pre>
+      </div>
+
+      <h4>Mức 2 — Chỉ cần đã đăng nhập ([Authorize] đơn giản)</h4>
+      <p>Gắn <code>[Authorize]</code> lên controller/action: chỉ cần ticket tồn tại và hợp lệ, không kiểm tra claim cụ thể nào.</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+[Authorize]   // toàn bộ controller yêu cầu đăng nhập
+public class DepartmentsController : Controller
+{
+    public IActionResult Index() =&gt; View();
+
+    [HttpGet]
+    public async Task&lt;IActionResult&gt; Details(int id) { /*...*/ return View(); }
+
+    // Action này cần thêm quyền Admin
+    [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task&lt;IActionResult&gt; Create(Department department) { /*...*/ return RedirectToAction(nameof(Index)); }
+
+    [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task&lt;IActionResult&gt; Edit(Department department) { /*...*/ return RedirectToAction(nameof(Index)); }
+
+    [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task&lt;IActionResult&gt; Delete(int id) { /*...*/ return RedirectToAction(nameof(Index)); }
+}</code></pre>
+      </div>
+
+      <h4>Mức 3 — Phân quyền theo Policy / Claim</h4>
+      <p>Gắn <code>[Authorize(Policy = "AdminOnly")]</code>: ngoài việc phải đăng nhập, claim <code>Role</code> trong ticket còn phải có giá trị <code>"Admin"</code>.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Có thể kết hợp: đặt <code>[Authorize]</code> ở cấp controller (yêu cầu đăng nhập chung) và <code>[Authorize(Policy = "AdminOnly")]</code> tại từng action nhạy cảm. Hai attribute này cộng dồn (<em>AND logic</em>) — cả hai đều phải thoả mãn.</p>
+      </div>
+
+      <h3>Xử lý khi truy cập bị từ chối</h3>
+      <p>Khi người dùng chưa đăng nhập và truy cập resource có <code>[Authorize]</code>:</p>
+      <ul>
+        <li>Middleware tự động <strong>redirect về trang Login</strong> (đường dẫn cấu hình qua <code>options.LoginPath</code>).</li>
+      </ul>
+      <p>Khi người dùng đã đăng nhập nhưng không đủ quyền (ví dụ không phải Admin):</p>
+      <ul>
+        <li>Middleware redirect về trang <strong>Access Denied</strong> (mặc định <code>/Account/AccessDenied</code>).</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/AccountController.cs — thêm action AccessDenied</span><span class="lang">csharp</span></div>
+        <pre><code>public IActionResult AccessDenied()
+{
+    return View();
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Account/AccessDenied.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    ViewBag.Title = "Access Denied";
+}
+&lt;h3&gt;Truy cập bị từ chối&lt;/h3&gt;
+&lt;p class="text-danger"&gt;Bạn không có quyền truy cập trang này.&lt;/p&gt;</code></pre>
+      </div>
+
+      <h3>AccountController đầy đủ (với phân biệt Admin / User)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/AccountController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using WebApp.Model;
+
+namespace WebApp.Controllers
+{
+    public class AccountController : Controller
+    {
+        public IActionResult Login() =&gt; View(new CredentialViewModel());
+
+        [HttpPost]
+        public async Task&lt;IActionResult&gt; Login(CredentialViewModel credential)
+        {
+            if (!ModelState.IsValid) return View(credential);
+
+            bool isAdmin = credential.EmailAddress == "admin@company.com"
+                           &amp;&amp; credential.Password == "password";
+            bool isUser  = credential.EmailAddress == "user@company.com"
+                           &amp;&amp; credential.Password == "password";
+
+            if (isAdmin || isUser)
+            {
+                var claims = new List&lt;Claim&gt;();
+                claims.Add(new Claim("Name", credential.EmailAddress!));
+                claims.Add(new Claim("Role", isAdmin ? "Admin" : "User"));
+
+                var identity      = new ClaimsIdentity(claims, "CookieScheme");
+                var userPrincipal = new ClaimsPrincipal(identity);
+
+                await HttpContext.SignInAsync("CookieScheme", userPrincipal);
+                return RedirectToAction("Index", "Home");
+            }
+
+            ModelState.AddModelError("Error", "Not able to login.");
+            return View(credential);
+        }
+
+        public IActionResult AccessDenied() =&gt; View();
+    }
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Đăng xuất (Sign Out)</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Remove the Authentication Ticket when Signing Out</em></p>
+
+      <p>Khi người dùng đăng xuất, server cần <strong>xoá cookie</strong> khỏi trình duyệt. Nếu không, cookie vẫn tồn tại và người dùng vẫn được coi là đã đăng nhập cho đến khi hết hạn.</p>
+
+      <h3>Thêm action LogOut vào AccountController</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/AccountController.cs — thêm LogOut</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpPost]
+public async Task&lt;IActionResult&gt; LogOut()
+{
+    // SignOutAsync xoá cookie khỏi trình duyệt
+    await HttpContext.SignOutAsync("CookieScheme");
+
+    // Redirect về trang chủ (không yêu cầu xác thực)
+    return RedirectToAction("Index", "Home");
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Action đăng xuất phải dùng <code>[HttpPost]</code> để tránh tấn công CSRF — kẻ tấn công có thể khiến trình duyệt gửi GET request ngầm đến URL đăng xuất, ép người dùng bị logout ngoài ý muốn. POST kết hợp AntiForgery token ngăn chặn điều này.</p>
+      </div>
+
+      <h3>Partial View hiển thị trạng thái đăng nhập (_LoginStatus.cshtml)</h3>
+      <p>Thay vì hardcode nút Login/Logout ở mọi nơi, tạo một partial view kiểm tra <code>User.Identity.IsAuthenticated</code> và hiển thị phù hợp:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_LoginStatus.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@if (User is not null &amp;&amp; User.Identity is not null &amp;&amp; User.Identity.IsAuthenticated)
+{
+    &lt;form method="post" class="form-inline"
+          asp-action="LogOut" asp-controller="Account"&gt;
+        Welcome @User.Identity.Name
+        &lt;button type="submit" class="ml-2 btn btn-link"&gt;Logout&lt;/button&gt;
+    &lt;/form&gt;
+}
+else
+{
+    &lt;a class="btn btn-link"
+       asp-controller="Account" asp-action="Login"&gt;Login&lt;/a&gt;
+}</code></pre>
+      </div>
+
+      <h3>Nhúng _LoginStatus vào Navbar</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_Navbar.cshtml (trích)</span><span class="lang">razor</span></div>
+        <pre><code>&lt;nav class="navbar navbar-expand-lg bg-body-tertiary"&gt;
+    &lt;div class="container-fluid"&gt;
+        &lt;!-- ... các nav-item ... --&gt;
+        &lt;div class="mr-2"&gt;
+            &lt;partial name="_LoginStatus" /&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+&lt;/nav&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> <code>User</code> trong Razor view là shorthand cho <code>HttpContext.User</code>. Thuộc tính này luôn khả dụng vì Razor view kế thừa <code>RazorPage&lt;T&gt;</code> vốn có sẵn property <code>User</code>.</p>
+      </div>
+
+      <h3>Luồng hoàn chỉnh sau khi thêm Sign Out</h3>
+      <ol class="steps">
+        <li>User chưa đăng nhập → navbar hiện nút <strong>Login</strong>.</li>
+        <li>User đăng nhập thành công → <code>SignInAsync</code> tạo cookie → navbar hiện <em>Welcome user@company.com</em> + nút <strong>Logout</strong>.</li>
+        <li>User nhấn Logout → POST đến <code>/Account/LogOut</code> → <code>SignOutAsync</code> xoá cookie → redirect về trang chủ → navbar lại hiện nút <strong>Login</strong>.</li>
+      </ol>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Bật HTTPS</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Enable HTTPS</em></p>
+
+      <p>Nếu ứng dụng chỉ chạy qua HTTP thuần, toàn bộ dữ liệu — bao gồm email và mật khẩu — được gửi dưới dạng <strong>plain text</strong>. Bất kỳ ai nghe lén mạng (ví dụ dùng công cụ Fiddler) đều có thể đọc được thông tin đó. <strong>HTTPS</strong> thêm một lớp mã hoá (TLS/SSL) lên trên HTTP, ngăn chặn việc đọc trộm.</p>
+
+      <h3>HTTPS là gì?</h3>
+      <table class="tbl">
+        <tr><th>Protocol</th><th>Mã hoá</th><th>An toàn?</th></tr>
+        <tr><td>HTTP</td><td>Không</td><td>Không — dữ liệu plain text</td></tr>
+        <tr><td>HTTPS</td><td>TLS (Transport Layer Security)</td><td>Có — dữ liệu mã hoá end-to-end</td></tr>
+      </table>
+
+      <h3>Bật HTTPS trong ASP.NET Core</h3>
+      <p>ASP.NET Core cung cấp hai middleware để xử lý HTTPS:</p>
+      <ul>
+        <li><code>UseHsts()</code> — gửi HTTP header <code>Strict-Transport-Security</code>, yêu cầu trình duyệt <em>luôn</em> dùng HTTPS với domain này trong tương lai.</li>
+        <li><code>UseHttpsRedirection()</code> — tự động redirect mọi request HTTP (80) thành HTTPS (443).</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — bật HTTPS</span><span class="lang">csharp</span></div>
+        <pre><code>var app = builder.Build();
+
+// Chỉ bật HSTS trong môi trường production
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();   // redirect HTTP → HTTPS
+
+app.UseStaticFiles();
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapDefaultControllerRoute();
+app.Run();</code></pre>
+      </div>
+
+      <h3>Certificate cho Development</h3>
+      <p>Khi phát triển local, .NET đã tự tạo sẵn một <strong>development certificate</strong> (chứng chỉ tự ký). Chạy lệnh sau để tin tưởng certificate đó trên máy:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet dev-certs https --trust</code></pre>
+      </div>
+
+      <h3>Cấu hình port HTTPS trong launchSettings.json</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Properties/launchSettings.json (trích)</span><span class="lang">json</span></div>
+        <pre><code>{
+  "profiles": {
+    "https": {
+      "commandName": "Project",
+      "applicationUrl": "https://localhost:7001;http://localhost:5000",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔒</span><strong>Quy tắc vàng:</strong> <em>Không bao giờ</em> triển khai ứng dụng có form đăng nhập lên production mà chỉ dùng HTTP. Mật khẩu và authentication ticket đều phải được bảo vệ bởi HTTPS.</p>
+      </div>
+
+      <h3>Tổng kết: Program.cs hoàn chỉnh của chương 28</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — hoàn chỉnh</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllersWithViews();
+
+// 1. Đăng ký Authentication (Cookie scheme)
+builder.Services.AddAuthentication("CookieScheme")
+    .AddCookie("CookieScheme", options =&gt;
+    {
+        options.LoginPath      = "/Account/Login";
+        options.Cookie.Name    = "CookieScheme";
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+    });
+
+// 2. Đăng ký Authorization policies
+builder.Services.AddAuthorization(options =&gt;
+{
+    options.AddPolicy("AdminOnly", policy =&gt;
+        policy.RequireClaim("Role", "Admin"));
+});
+
+var app = builder.Build();
+
+// 3. HTTPS
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+
+// 4. Authentication &amp; Authorization middleware (thứ tự quan trọng)
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapDefaultControllerRoute();
+app.Run();</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-27.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">27 · Exception Handling</div>
+      </a>
+      <a class="next" href="lesson-29.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">29 · Securing Web API</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

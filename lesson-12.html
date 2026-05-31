@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 12 — MVC: Layout Views | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 12 — MVC: Layout Views</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Layout Razor View</a></li>
+      <li><a href="#s2">2. Multiple Layouts &amp; Nested Layouts</a></li>
+      <li><a href="#s3">3. _ViewStart</a></li>
+      <li><a href="#s4">4. _ViewImports</a></li>
+      <li><a href="#s5">5. ViewData / ViewBag giao tiếp với Layout</a></li>
+      <li><a href="#s6">6. Sections — các placeholder bổ sung</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 12</span>
+      <h1>MVC — Layout Views</h1>
+      <p class="lead">Tái sử dụng HTML dùng chung qua Layout file, điều phối layout tự động bằng <code>_ViewStart</code>, tập trung các directive với <code>_ViewImports</code>, truyền dữ liệu từ view lên layout qua ViewBag, và mở rộng layout linh hoạt với Sections.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Layout Razor View</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Layout razor view</em></p>
+
+      <p>Khi xây dựng ứng dụng MVC với nhiều view, mỗi view đều phải chứa phần khung HTML đầy đủ: thẻ <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>, link CSS, <code>&lt;body&gt;</code>… Điều này dẫn đến việc lặp lại (duplicate) rất nhiều code HTML giống hệt nhau ở mọi file view.</p>
+
+      <p><strong>Layout file</strong> là giải pháp của ASP.NET Core MVC để giải quyết vấn đề này — tương tự như khái niệm <em>master page</em> hay <em>template</em>. Một layout file là một file <code>.cshtml</code> bình thường, nhưng chứa phần HTML dùng chung và có một "lỗ trống" đặc biệt là <code>@RenderBody()</code> — nơi nội dung của từng view riêng lẻ sẽ được chèn vào khi render.</p>
+
+      <h3>Quy ước đặt tên và vị trí</h3>
+      <ul>
+        <li>Theo convention, layout file được đặt tên bắt đầu bằng dấu gạch dưới: <code>_Layout.cshtml</code>.</li>
+        <li>Vị trí phổ biến nhất là thư mục <code>Views/Shared/</code> để tất cả các view trong ứng dụng đều tìm thấy.</li>
+        <li>Tên file thực ra có thể tùy ý — điều quan trọng là view phải chỉ định đúng tên layout khi tham chiếu tới nó.</li>
+      </ul>
+
+      <h3>Cách hoạt động</h3>
+      <ol class="steps">
+        <li>View riêng lẻ (vd: <code>Index.cshtml</code>) khai báo <code>Layout = "_Layout"</code> trong code block Razor.</li>
+        <li>Razor engine nạp file <code>_Layout.cshtml</code>, render phần HTML chung.</li>
+        <li>Tại vị trí <code>@RenderBody()</code> trong layout, engine chèn toàn bộ nội dung HTML của view riêng lẻ vào.</li>
+        <li>Kết quả HTML hoàn chỉnh được trả về cho browser.</li>
+      </ol>
+
+      <h3>Layout file (_Layout.cshtml)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_Layout.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;html&gt;
+    &lt;head&gt;
+        &lt;link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+              rel="stylesheet" /&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;nav class="navbar navbar-expand-lg bg-body-tertiary"&gt;
+            &lt;div class="container-fluid"&gt;
+                &lt;a class="navbar-brand" href="#"&gt;Departments&lt;/a&gt;
+                &lt;div class="collapse navbar-collapse"&gt;
+                    &lt;ul class="navbar-nav me-auto mb-2 mb-lg-0"&gt;
+                        &lt;li class="nav-item"&gt;
+                            &lt;a class="nav-link" href="/"&gt;Home&lt;/a&gt;
+                        &lt;/li&gt;
+                        &lt;li class="nav-item"&gt;
+                            &lt;a class="nav-link" href="/departments"&gt;Departments&lt;/a&gt;
+                        &lt;/li&gt;
+                    &lt;/ul&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/nav&gt;
+
+        &lt;div class="container"&gt;
+            @RenderBody()
+        &lt;/div&gt;
+
+        &lt;script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"&gt;&lt;/script&gt;
+    &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>View sử dụng layout</h3>
+      <p>Mỗi view cần khai báo layout nào nó muốn dùng thông qua thuộc tính <code>Layout</code> trong một code block Razor <code>@{ }</code>. Chỉ cần viết tên (không cần đường dẫn đầy đủ và không cần extension <code>.cshtml</code>).</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@using WebApp.Models
+@model List&lt;Department&gt;
+
+@{
+    Layout = "_Layout";
+}
+
+&lt;h3&gt;Departments&lt;/h3&gt;
+
+@if (Model is not null &amp;&amp; Model.Count &gt; 0)
+{
+    &lt;table class="table table-striped"&gt;
+        &lt;thead&gt;
+            &lt;tr&gt;
+                &lt;th&gt;Name&lt;/th&gt;
+                &lt;th&gt;Description&lt;/th&gt;
+                &lt;th&gt;&lt;/th&gt;
+            &lt;/tr&gt;
+        &lt;/thead&gt;
+        &lt;tbody&gt;
+            @foreach (var department in Model)
+            {
+                &lt;tr&gt;
+                    &lt;td&gt;@department.Name&lt;/td&gt;
+                    &lt;td&gt;@department.Description&lt;/td&gt;
+                    &lt;td&gt;&lt;a class="btn btn-link" href="/departments/details/@department.Id"&gt;Edit&lt;/a&gt;&lt;/td&gt;
+                &lt;/tr&gt;
+            }
+        &lt;/tbody&gt;
+    &lt;/table&gt;
+}
+
+&lt;a class="btn btn-primary" href="/departments/create"&gt;Add&lt;/a&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Razor engine tìm layout theo thứ tự: trước tiên trong cùng thư mục với view, nếu không thấy thì tìm trong <code>Views/Shared/</code>. Đây là lý do tại sao đặt layout trong <code>Shared/</code> là convention phổ biến nhất — mọi view đều tìm thấy nó.</p>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Nếu muốn view <strong>không dùng</strong> layout nào cả, đặt <code>Layout = null</code> trong code block. Điều này hữu ích cho các partial response hoặc trang đặc biệt như trang login không cần thanh navbar.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Multiple Layouts &amp; Nested Layouts</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Multiple Layouts and Nested Layouts</em></p>
+
+      <p>Một ứng dụng không nhất thiết chỉ có một layout duy nhất. Bạn có thể tạo nhiều layout file khác nhau và để từng nhóm view sử dụng layout phù hợp với mình.</p>
+
+      <h3>Multiple Layouts (Nhiều layout)</h3>
+      <p>Giả sử ứng dụng có hai khu vực: khu vực công khai và khu vực admin. Khu vực admin có thể dùng một layout riêng với sidebar, trong khi khu vực công khai dùng layout đơn giản hơn.</p>
+
+      <p>Cơ chế tìm layout của Razor engine:</p>
+      <ol class="steps">
+        <li>Razor tìm layout trong <strong>cùng thư mục</strong> với view hiện tại trước.</li>
+        <li>Nếu không tìm thấy, nó leo lên thư mục <strong><code>Views/Shared/</code></strong>.</li>
+      </ol>
+
+      <p>Điều này cho phép bạn tạo một layout đặc biệt chỉ cho một nhóm view bằng cách đặt file layout đó vào cùng thư mục. Ví dụ: tạo <code>Views/Departments/_Layout.cshtml</code> — tất cả view trong thư mục <code>Departments/</code> khi khai báo <code>Layout = "_Layout"</code> sẽ ưu tiên dùng file này thay vì file layout trong <code>Shared/</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/_Layout.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;!-- Layout đặc biệt chỉ dành cho khu vực Departments --&gt;
+&lt;html&gt;
+    &lt;head&gt;
+        &lt;link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+              rel="stylesheet" /&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;h1&gt;Departments Section&lt;/h1&gt;
+        &lt;hr /&gt;
+        &lt;div class="container"&gt;
+            @RenderBody()
+        &lt;/div&gt;
+    &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Nested Layouts (Layout lồng nhau)</h3>
+      <p>Một layout file cũng có thể <strong>sử dụng layout khác</strong> làm cha của nó — đây là kỹ thuật <em>nested layout</em>. Điều này cho phép xây dựng cấu trúc layout phân cấp, tránh lặp lại HTML chung giữa các layout.</p>
+
+      <p>Ví dụ: <code>_AdminLayout.cshtml</code> sử dụng <code>_Layout.cshtml</code> làm layout cha, và thêm một sidebar đặc biệt cho khu vực admin.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_AdminLayout.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    Layout = "_Layout";   &lt;!-- layout này cũng dùng _Layout làm cha --&gt;
+}
+
+&lt;!-- Nội dung bổ sung của admin layout --&gt;
+&lt;div class="row"&gt;
+    &lt;div class="col-2"&gt;
+        &lt;!-- Admin Sidebar --&gt;
+        &lt;ul&gt;
+            &lt;li&gt;&lt;a href="/admin/users"&gt;Users&lt;/a&gt;&lt;/li&gt;
+            &lt;li&gt;&lt;a href="/admin/settings"&gt;Settings&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+    &lt;/div&gt;
+    &lt;div class="col-10"&gt;
+        @RenderBody()
+    &lt;/div&gt;
+&lt;/div&gt;</code></pre>
+      </div>
+
+      <p>Các view trong khu vực admin chỉ cần khai báo <code>Layout = "_AdminLayout"</code>. Kết quả render sẽ là: nội dung view &rarr; chèn vào <code>@RenderBody()</code> của <code>_AdminLayout</code> &rarr; kết quả đó lại được chèn vào <code>@RenderBody()</code> của <code>_Layout</code> cha.</p>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> <strong>Thứ tự tìm layout:</strong> cùng thư mục &rarr; <code>Views/Shared/</code>. Nested layout render theo thứ tự từ ngoài vào trong: layout cha render trước, sau đó chèn nội dung của layout con vào, rồi mới chèn nội dung view.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> _ViewStart — Tự động áp dụng Layout</h2>
+      <p class="subvideo-meta">Bài 3 · <em>_ViewStart razor view</em></p>
+
+      <p>Sau khi thêm layout, bạn nhận thấy rằng mọi view đều phải lặp lại đoạn code sau:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">(mỗi view đều phải có)</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    Layout = "_Layout";
+}</code></pre>
+      </div>
+
+      <p>Đây vẫn là dạng lặp code. <strong><code>_ViewStart.cshtml</code></strong> được tạo ra để giải quyết vấn đề này.</p>
+
+      <h3>_ViewStart là gì?</h3>
+      <p><code>_ViewStart.cshtml</code> là một file Razor đặc biệt được Razor engine <strong>tự động render trước bất kỳ view nào</strong> trong cùng thư mục hoặc thư mục con. Đây là nơi lý tưởng để đặt việc chỉ định layout mặc định — mọi view sẽ kế thừa setting này mà không cần khai báo lại.</p>
+
+      <h3>Vị trí đặt file</h3>
+      <p>Theo convention, <code>_ViewStart.cshtml</code> được đặt trong thư mục <code>Views/</code> (root của thư mục Views), không phải trong <code>Shared/</code>. Nó áp dụng cho tất cả view bên dưới thư mục đó.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/_ViewStart.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    Layout = "_Layout";
+}</code></pre>
+      </div>
+
+      <p>Sau khi có file này, tất cả các view không cần khai báo <code>Layout</code> nữa — chúng sẽ tự động dùng <code>_Layout</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml (sau khi có _ViewStart)</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    var days = new DateTime(DateTime.Today.Year, 12, 25) - DateTime.Today;
+
+    if (DateTime.Today &gt; new DateTime(DateTime.Today.Year, 12, 25))
+    {
+        days = new DateTime(DateTime.Today.Year + 1, 12, 25) - DateTime.Today;
+    }
+
+    string color = days.Days % 2 == 0 ? "green" : "red";
+}
+
+@if (days.Days &lt;= 35)
+{
+    &lt;h1&gt;Christmas is around the corner!&lt;/h1&gt;
+    @:Happy holidays!
+}
+else
+{
+    &lt;h1 style="color:@color"&gt;Welcome home!&lt;/h1&gt;
+    @days.Days &lt;text&gt; days before Christmas!&lt;/text&gt;
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Nếu một view riêng lẻ muốn <strong>ghi đè</strong> layout mặc định từ <code>_ViewStart</code>, nó vẫn có thể khai báo <code>Layout = "TênLayoutKhác"</code> hoặc <code>Layout = null</code> trong code block của mình — view luôn thắng <code>_ViewStart</code>.</p>
+      </div>
+
+      <h3>Thứ tự áp dụng _ViewStart</h3>
+      <p><code>_ViewStart</code> cũng hoạt động theo cơ chế phân cấp thư mục. Nếu có nhiều file <code>_ViewStart.cshtml</code> ở các cấp thư mục khác nhau, tất cả đều được thực thi — từ thư mục con lên thư mục cha. Điều này cho phép ghi đè layout ở cấp thư mục cụ thể.</p>
+
+      <table class="tbl">
+        <tr><th>Vị trí</th><th>Áp dụng cho</th></tr>
+        <tr><td><code>Views/_ViewStart.cshtml</code></td><td>Tất cả view trong <code>Views/</code> và thư mục con</td></tr>
+        <tr><td><code>Views/Departments/_ViewStart.cshtml</code></td><td>Chỉ các view trong <code>Views/Departments/</code></td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> _ViewImports — Tập trung các Directive</h2>
+      <p class="subvideo-meta">Bài 4 · <em>_ViewImports to centralize directives</em></p>
+
+      <p>Tương tự như vấn đề với <code>Layout</code>, các view cũng thường phải lặp lại các <strong>directive</strong> như <code>@using</code>, <code>@model</code> namespace, hay <code>@addTagHelper</code>. Ví dụ, mỗi view trong thư mục <code>Departments/</code> cần <code>@using WebApp.Models</code> để nhận biết class <code>Department</code>.</p>
+
+      <p><strong><code>_ViewImports.cshtml</code></strong> là file Razor đặc biệt cho phép bạn khai báo các directive dùng chung một lần duy nhất, áp dụng cho tất cả view trong cùng thư mục và thư mục con.</p>
+
+      <h3>_ViewImports khác _ViewStart như thế nào?</h3>
+      <table class="tbl">
+        <tr><th>Đặc điểm</th><th>_ViewStart</th><th>_ViewImports</th></tr>
+        <tr><td>Mục đích</td><td>Thực thi code trước mỗi view (thường set layout)</td><td>Chia sẻ directive (using, namespace…)</td></tr>
+        <tr><td>Nội dung hợp lệ</td><td>Code Razor bất kỳ</td><td>Chỉ các directive (<code>@using</code>, <code>@addTagHelper</code>, <code>@namespace</code>…)</td></tr>
+        <tr><td>Vị trí convention</td><td><code>Views/</code></td><td><code>Views/</code></td></tr>
+      </table>
+
+      <h3>File _ViewImports thực tế</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/_ViewImports.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@using WebApp.Models
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers</code></pre>
+      </div>
+
+      <p>Sau khi có file này, các view không cần khai báo <code>@using WebApp.Models</code> nữa. Ví dụ, <code>Index.cshtml</code> trong thư mục Departments được rút gọn:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml (sau khi có _ViewImports)</span><span class="lang">razor</span></div>
+        <pre><code>@model List&lt;Department&gt;
+
+&lt;!-- Không cần @using WebApp.Models nữa --&gt;
+
+@if (Model is not null &amp;&amp; Model.Count &gt; 0)
+{
+    &lt;table class="table table-striped"&gt;
+        &lt;thead&gt;
+            &lt;tr&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Description&lt;/th&gt;&lt;th&gt;&lt;/th&gt;&lt;/tr&gt;
+        &lt;/thead&gt;
+        &lt;tbody&gt;
+            @foreach (var department in Model)
+            {
+                &lt;tr&gt;
+                    &lt;td&gt;@department.Name&lt;/td&gt;
+                    &lt;td&gt;@department.Description&lt;/td&gt;
+                    &lt;td&gt;&lt;a class="btn btn-link" href="/departments/details/@department.Id"&gt;Edit&lt;/a&gt;&lt;/td&gt;
+                &lt;/tr&gt;
+            }
+        &lt;/tbody&gt;
+    &lt;/table&gt;
+}
+
+&lt;a class="btn btn-primary" href="/departments/create"&gt;Add&lt;/a&gt;</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <code>_ViewImports</code> cũng hoạt động theo cơ chế phân cấp. Các directive được <strong>cộng dồn</strong> từ nhiều cấp <code>_ViewImports</code> (không phải ghi đè). File ở thư mục con được hợp nhất với file ở thư mục cha.</p>
+      </div>
+
+      <h3>Các directive thường dùng trong _ViewImports</h3>
+      <ul>
+        <li><code>@using Namespace</code> — import namespace để dùng các class không cần gõ tên đầy đủ.</li>
+        <li><code>@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers</code> — kích hoạt Tag Helpers tích hợp sẵn của ASP.NET Core.</li>
+        <li><code>@namespace MyApp.Views</code> — đặt namespace mặc định cho tất cả Razor Page trong thư mục.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> ViewData / ViewBag giao tiếp với Layout</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Use ViewData or ViewBag to communicate with layout files</em></p>
+
+      <p>Layout file được dùng chung cho nhiều view. Vậy làm thế nào để layout có thể hiển thị thông tin khác nhau tùy theo view đang được render? Ví dụ điển hình nhất là <strong>tiêu đề trang (page title)</strong> — mỗi trang cần tiêu đề khác nhau trong thẻ <code>&lt;title&gt;</code>.</p>
+
+      <p>Giải pháp: dùng <strong><code>ViewData</code></strong> hoặc <strong><code>ViewBag</code></strong> để truyền dữ liệu từ view riêng lẻ lên layout file.</p>
+
+      <h3>ViewData vs ViewBag</h3>
+      <table class="tbl">
+        <tr><th></th><th>ViewData</th><th>ViewBag</th></tr>
+        <tr><td>Kiểu</td><td><code>ViewDataDictionary</code> (dictionary)</td><td>Dynamic wrapper của ViewData</td></tr>
+        <tr><td>Cú pháp đọc/ghi</td><td><code>ViewData["Key"]</code></td><td><code>ViewBag.Key</code></td></tr>
+        <tr><td>Type safety</td><td>Cần ép kiểu khi đọc</td><td>Dynamic, không cần ép kiểu</td></tr>
+        <tr><td>Nền tảng</td><td>Là nền tảng thực sự</td><td>ViewBag là alias của ViewData</td></tr>
+      </table>
+
+      <p>Cả hai đều chia sẻ cùng một storage — ghi vào <code>ViewBag.Title</code> rồi đọc bằng <code>ViewData["Title"]</code> đều cho kết quả như nhau.</p>
+
+      <h3>Ví dụ thực tế: tiêu đề động</h3>
+      <p>Bước 1: Trong layout, dùng <code>@ViewBag.Title</code> (hoặc <code>ViewData["Title"]</code>) tại thẻ <code>&lt;title&gt;</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_Layout.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;@ViewBag.Title&lt;/title&gt;
+        &lt;link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+              rel="stylesheet" /&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;nav class="navbar navbar-expand-lg bg-body-tertiary"&gt;
+            &lt;!-- ... navbar content ... --&gt;
+        &lt;/nav&gt;
+        &lt;div class="container"&gt;
+            @RenderBody()
+        &lt;/div&gt;
+    &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <p>Bước 2: Trong mỗi view riêng lẻ, set giá trị cho <code>ViewBag.Title</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model List&lt;Department&gt;
+
+@{
+    ViewBag.Title = "Departments";
+}
+
+&lt;!-- Phần còn lại của view --&gt;
+&lt;h3&gt;Departments&lt;/h3&gt;
+&lt;!-- ... --&gt;</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    ViewBag.Title = "Home";
+    &lt;!-- ... logic khác ... --&gt;
+}
+
+&lt;h1&gt;Welcome home!&lt;/h1&gt;</code></pre>
+      </div>
+
+      <p>Kết quả: thẻ <code>&lt;title&gt;</code> sẽ hiện <em>"Departments"</em> khi render trang danh sách, và <em>"Home"</em> khi render trang chủ — trong khi layout vẫn là file dùng chung.</p>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> <code>ViewData</code> và <code>ViewBag</code> không có <em>type safety</em> — lỗi chính tả tên key chỉ phát sinh lúc runtime, không bị bắt lúc compile. Dùng chúng cho các trường hợp đơn giản như page title là hợp lý; với dữ liệu phức tạp hơn, hãy ưu tiên strongly-typed ViewModel.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Sections — Các Placeholder Bổ Sung</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Sections as additional placeholders</em></p>
+
+      <p><code>@RenderBody()</code> chỉ cung cấp <strong>một</strong> vị trí (placeholder) trong layout để chèn nội dung của view. Nhưng đôi khi bạn cần nhiều vị trí hơn — ví dụ: view muốn chèn nội dung vào phần navbar, hoặc thêm CSS/JS đặc thù vào phần <code>&lt;head&gt;</code>, hoặc đặt một tiêu đề ở một khu vực riêng ngoài body chính.</p>
+
+      <p><strong>Sections</strong> là cơ chế của Razor cho phép định nghĩa thêm các placeholder tùy ý trong layout. View riêng lẻ có thể cung cấp nội dung cho các section đó.</p>
+
+      <h3>Định nghĩa Section trong Layout</h3>
+      <p>Dùng <code>@RenderSection("tên_section", required: bool)</code> trong layout để đánh dấu một vị trí placeholder có tên:</p>
+      <ul>
+        <li><code>required: true</code> — view <strong>bắt buộc</strong> phải cung cấp nội dung cho section này, nếu không sẽ gây lỗi runtime.</li>
+        <li><code>required: false</code> — section là tùy chọn; nếu view không cung cấp, vị trí đó sẽ bỏ trống.</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_Layout.cshtml (với sections)</span><span class="lang">razor</span></div>
+        <pre><code>&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;@ViewBag.Title&lt;/title&gt;
+        &lt;link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+              rel="stylesheet" /&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;nav class="navbar navbar-expand-lg bg-body-tertiary"&gt;
+            &lt;div class="container-fluid"&gt;
+                &lt;a class="navbar-brand" href="#"&gt;Departments&lt;/a&gt;
+                &lt;div class="collapse navbar-collapse"&gt;
+                    &lt;ul class="navbar-nav me-auto mb-2 mb-lg-0"&gt;
+                        &lt;li class="nav-item"&gt;&lt;a class="nav-link" href="/"&gt;Home&lt;/a&gt;&lt;/li&gt;
+                        &lt;li class="nav-item"&gt;&lt;a class="nav-link" href="/departments"&gt;Departments&lt;/a&gt;&lt;/li&gt;
+                    &lt;/ul&gt;
+                    @* Section tùy chọn trong navbar — view có thể thêm nút/link vào đây *@
+                    @RenderSection("a_section", false)
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/nav&gt;
+
+        &lt;div class="container"&gt;
+            @* Section tùy chọn cho tiêu đề trang — đặt trên body chính *@
+            @RenderSection("title_section", false)
+            &lt;br /&gt;
+
+            @* Placeholder chính — nội dung view chèn vào đây *@
+            @RenderBody()
+        &lt;/div&gt;
+
+        &lt;script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"&gt;&lt;/script&gt;
+    &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <h3>Cung cấp nội dung cho Section từ View</h3>
+      <p>Trong view riêng lẻ, dùng cú pháp <code>@section tên_section { ... }</code> để cung cấp nội dung cho section tương ứng:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model List&lt;Department&gt;
+
+@{
+    ViewBag.Title = "Departments";
+}
+
+@* Nội dung chèn vào section "title_section" trong layout *@
+@section title_section {
+    &lt;h3&gt;Departments&lt;/h3&gt;
+}
+
+@* Phần còn lại chèn vào @RenderBody() *@
+@if (Model is not null &amp;&amp; Model.Count &gt; 0)
+{
+    &lt;table class="table table-striped"&gt;
+        &lt;thead&gt;
+            &lt;tr&gt;
+                &lt;th&gt;Name&lt;/th&gt;
+                &lt;th&gt;Description&lt;/th&gt;
+                &lt;th&gt;&lt;/th&gt;
+            &lt;/tr&gt;
+        &lt;/thead&gt;
+        &lt;tbody&gt;
+            @foreach (var department in Model)
+            {
+                &lt;tr&gt;
+                    &lt;td&gt;@department.Name&lt;/td&gt;
+                    &lt;td&gt;@department.Description&lt;/td&gt;
+                    &lt;td&gt;&lt;a class="btn btn-link" href="/departments/details/@department.Id"&gt;Edit&lt;/a&gt;&lt;/td&gt;
+                &lt;/tr&gt;
+            }
+        &lt;/tbody&gt;
+    &lt;/table&gt;
+}
+
+&lt;a class="btn btn-primary" href="/departments/create"&gt;Add&lt;/a&gt;</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Details.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Department
+
+@{
+    ViewBag.Title = "Department Details";
+}
+
+@section title_section {
+    &lt;h3&gt;Department&lt;/h3&gt;
+}
+
+&lt;form method="post" action="/departments/edit"&gt;
+    &lt;input type="hidden" name="Id" value="@Model.Id" /&gt;
+
+    &lt;div class="row mb-3"&gt;
+        &lt;div class="col-2"&gt;
+            &lt;label class="col-form-label"&gt;Name&lt;/label&gt;
+        &lt;/div&gt;
+        &lt;div class="col-6"&gt;
+            &lt;input type="text" name="Name" value="@Model.Name" class="form-control" /&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class="row mb-3"&gt;
+        &lt;div class="col-2"&gt;
+            &lt;label class="col-form-label"&gt;Description&lt;/label&gt;
+        &lt;/div&gt;
+        &lt;div class="col-6"&gt;
+            &lt;input type="text" name="Description" value="@Model.Description" class="form-control" /&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class="row mb-3"&gt;
+        &lt;div class="col-2"&gt;
+            &lt;button type="submit" class="btn btn-primary"&gt;Save&lt;/button&gt;
+            &amp;nbsp;&amp;nbsp;
+            &lt;a href="/departments" class="btn btn-primary"&gt;Cancel&lt;/a&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+&lt;/form&gt;
+
+&lt;form method="post" action="/departments/delete/@Model.Id"&gt;
+    &lt;button type="submit" class="btn btn-danger"&gt;Delete&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <h3>Tổng quan cơ chế Section</h3>
+      <table class="tbl">
+        <tr><th>Cú pháp trong Layout</th><th>Cú pháp trong View</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>@RenderBody()</code></td><td>(toàn bộ HTML còn lại)</td><td>Placeholder chính, bắt buộc có trong layout</td></tr>
+        <tr><td><code>@RenderSection("name", true)</code></td><td><code>@section name { ... }</code></td><td>Placeholder có tên, view bắt buộc cung cấp</td></tr>
+        <tr><td><code>@RenderSection("name", false)</code></td><td><code>@section name { ... }</code> (tùy chọn)</td><td>Placeholder có tên, view không bắt buộc</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> <strong>Khi nào dùng Section thay vì ViewBag?</strong> Dùng <code>ViewBag</code> khi chỉ cần truyền <em>dữ liệu đơn giản</em> (chuỗi, số) lên layout. Dùng <code>@section</code> khi cần chèn <em>HTML/markup phức tạp</em> vào nhiều vị trí khác nhau trong layout — như script, style đặc thù trang, hoặc widget.</p>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> <strong>Lưu ý đặt script cuối trang:</strong> Sections đặc biệt hữu ích để chèn JavaScript đặc thù của từng trang vào cuối <code>&lt;body&gt;</code>. Bạn có thể tạo một section <code>scripts</code> trong layout và để các view tự quyết định có thêm script đặc thù hay không — đây là pattern rất phổ biến trong các dự án ASP.NET Core MVC.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-11.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">11 · MVC — Razor Views</div>
+      </a>
+      <a class="next" href="lesson-13.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">13 · MVC — Componentization &amp; Interactivity</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

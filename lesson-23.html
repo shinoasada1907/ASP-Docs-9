@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 23 — Web API — Documentation &amp; Versioning | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 23 — Web API — Documentation &amp; Versioning</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Dùng OpenAPI để tài liệu hóa Web API</a></li>
+      <li><a href="#s2">2. Dùng Swagger UI để hiển thị tài liệu</a></li>
+      <li><a href="#s3">3. Bổ sung chi tiết cho tài liệu</a></li>
+      <li><a href="#s4">4. Versioning cho Web API</a></li>
+      <li><a href="#s5">5. Tài liệu hóa nhiều phiên bản</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 23</span>
+      <h1>Web API — Documentation &amp; Versioning</h1>
+      <p class="lead">Tài liệu hóa Web API controller-based với OpenAPI/Swagger UI, bổ sung thông tin chi tiết cho endpoint, và quản lý nhiều phiên bản API bằng <code>Asp.Versioning.Mvc</code>.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Dùng OpenAPI để tài liệu hóa Web API</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Use OpenAPI to document Web API</em></p>
+
+      <p>Trong chương về <strong>Minimal API</strong>, chúng ta đã tài liệu hóa endpoint bằng OpenAPI tích hợp sẵn của .NET 9. Với <strong>Controller-based Web API</strong>, quy trình hoàn toàn tương tự — chỉ cần thêm một NuGet package bổ sung và khai báo HTTP verb trên action method.</p>
+
+      <h3>Tạo project</h3>
+      <p>Tạo project mới từ template <em>ASP.NET Core Web API</em> (hoặc dùng CLI), bỏ chọn tùy chọn "Use controllers" tự động để tự cấu hình thủ công cho dễ nhớ:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet new webapi -n LearnApiDocument --no-openapi
+cd LearnApiDocument</code></pre>
+      </div>
+
+      <h3>Cài NuGet package</h3>
+      <p>Package duy nhất cần thiết cho bước này là <strong>Microsoft.AspNetCore.OpenApi</strong> — đây là package OpenAPI tích hợp của .NET 9, đã có sẵn nếu bạn dùng template mặc định:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Microsoft.AspNetCore.OpenApi</code></pre>
+      </div>
+
+      <h3>Cấu hình Program.cs</h3>
+      <p>Đăng ký dịch vụ OpenAPI và map endpoint tài liệu. Endpoint <code>/openapi/v1.json</code> sẽ trả về JSON spec theo chuẩn OpenAPI 3:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddOpenApi(); // đăng ký OpenAPI document mặc định (v1)
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi(); // phục vụ /openapi/v1.json
+}
+
+app.MapControllers();
+app.Run();</code></pre>
+      </div>
+
+      <h3>Controller mẫu</h3>
+      <p>Để OpenAPI có thể khám phá endpoint, mỗi action method <strong>bắt buộc</strong> phải được trang trí bằng HTTP verb attribute (<code>[HttpGet]</code>, <code>[HttpPost]</code>, …). Nếu thiếu, endpoint sẽ không xuất hiện trong tài liệu:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("[controller]")]
+public class WeatherForecastController : ControllerBase
+{
+    private static readonly string[] Summaries = new[]
+    {
+        "Freezing", "Bracing", "Chilly", "Cool", "Mild",
+        "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+    };
+
+    [HttpGet]
+    public IEnumerable&lt;WeatherForecast&gt; GetAll()
+    {
+        return Enumerable.Range(1, 5).Select(i =&gt; new WeatherForecast
+        {
+            Date      = DateOnly.FromDateTime(DateTime.Now.AddDays(i)),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary   = Summaries[Random.Shared.Next(Summaries.Length)]
+        });
+    }
+
+    [HttpPut("{id}")]
+    public IActionResult Update(int id) =&gt; NoContent();
+
+    [HttpDelete("{id}")]
+    public IActionResult Delete(int id) =&gt; NoContent();
+}</code></pre>
+      </div>
+
+      <p>Chạy ứng dụng và truy cập <code>https://localhost:{port}/openapi/v1.json</code> để xem OpenAPI JSON spec.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> <strong>So sánh với Minimal API:</strong> cách dùng <code>AddOpenApi()</code> / <code>MapOpenApi()</code> hoàn toàn giống nhau. Điểm khác biệt là với controller, bạn phải khai báo <code>[HttpGet]</code> / <code>[HttpPost]</code> … rõ ràng — framework mới biết đây là endpoint HTTP.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Dùng Swagger UI để hiển thị tài liệu</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Use SwaggerUI to visualize our document</em></p>
+
+      <p>File JSON OpenAPI hữu ích cho công cụ tự động, nhưng không thân thiện với người dùng. <strong>Swagger UI</strong> là giao diện web giúp hiển thị tài liệu dạng trực quan và cho phép gọi thử API ngay trên trình duyệt.</p>
+
+      <h3>Cài Swashbuckle</h3>
+      <p>Package <strong>Swashbuckle.AspNetCore</strong> là thư viện phổ biến nhất để tích hợp Swagger UI vào ASP.NET Core. Đây là package duy nhất cần thêm:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Swashbuckle.AspNetCore</code></pre>
+      </div>
+
+      <h3>Cấu hình Swagger UI trong Program.cs</h3>
+      <p>Swagger UI của Swashbuckle cần biết URL của OpenAPI JSON document để hiển thị. URL mặc định mà <code>MapOpenApi()</code> phục vụ là <code>/openapi/v1.json</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi(); // phục vụ /openapi/v1.json
+
+    app.UseSwaggerUI(options =&gt;
+    {
+        // trỏ Swagger UI đến OpenAPI document do .NET 9 sinh ra
+        options.SwaggerEndpoint("/openapi/v1.json", "API V1");
+    });
+}
+
+app.MapControllers();
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Mặc định Swagger UI phục vụ tại <code>/swagger</code>. Chạy ứng dụng, mở <code>http://localhost:{port}/swagger</code> để thấy giao diện tương tác với danh sách tất cả endpoint.</p>
+      </div>
+
+      <h3>Kết quả</h3>
+      <p>Swagger UI hiển thị tất cả controller và action method, nhóm theo controller. Bạn có thể:</p>
+      <ul>
+        <li>Xem HTTP method, URL pattern, và schema request/response.</li>
+        <li>Bấm <strong>Try it out</strong> → <strong>Execute</strong> để gọi trực tiếp API và xem response ngay trên giao diện.</li>
+      </ul>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> <strong>Hai thành phần:</strong> <code>Microsoft.AspNetCore.OpenApi</code> (của Microsoft, tích hợp .NET 9) sinh ra OpenAPI JSON spec; <code>Swashbuckle.AspNetCore</code> (bên thứ ba) đọc spec đó và render Swagger UI. Chúng hoạt động độc lập nhưng phối hợp với nhau.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Bổ sung chi tiết cho tài liệu</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Provide more details to the document</em></p>
+
+      <p>Tài liệu OpenAPI mặc định chỉ liệt kê endpoint và HTTP method. Chúng ta có thể làm phong phú thêm bằng cách thêm: nhóm (tags), tóm tắt, mô tả, tên operation, và thông tin response type.</p>
+
+      <h3>Nhóm endpoint bằng Tags</h3>
+      <p>Trong controller-based API, dùng attribute <code>[Tags]</code> để gán nhóm cho action. Swagger UI hiển thị theo từng nhóm thay vì theo tên controller:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("[controller]")]
+public class WeatherForecastController : ControllerBase
+{
+    [HttpGet]
+    [Tags("Reading")]                         // nhóm "Reading"
+    [EndpointSummary("Lấy tất cả dự báo thời tiết")]
+    [EndpointDescription("Trả về danh sách dự báo thời tiết trong 5 ngày tới.")]
+    [ProducesResponseType&lt;IEnumerable&lt;WeatherForecast&gt;&gt;(StatusCodes.Status200OK)]
+    public IEnumerable&lt;WeatherForecast&gt; GetAll()
+    {
+        return Enumerable.Range(1, 5).Select(i =&gt; new WeatherForecast
+        {
+            Date         = DateOnly.FromDateTime(DateTime.Now.AddDays(i)),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary      = Summaries[Random.Shared.Next(Summaries.Length)]
+        });
+    }
+
+    [HttpPut("{id}")]
+    [Tags("Changing")]                        // nhóm "Changing"
+    [EndpointName("UpdateForecast")]          // operation ID trong OpenAPI spec
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType&lt;ProblemDetails&gt;(StatusCodes.Status404NotFound)]
+    public IActionResult Update(int id)
+    {
+        // giả lập: nếu id &lt;= 0 thì không tìm thấy
+        if (id &lt;= 0) return NotFound();
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    [Tags("Changing")]                        // cùng nhóm "Changing"
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType&lt;ProblemDetails&gt;(StatusCodes.Status404NotFound)]
+    public IActionResult Delete(int id)
+    {
+        if (id &lt;= 0) return NotFound();
+        return NoContent();
+    }
+}</code></pre>
+      </div>
+
+      <h3>Giải thích các attribute</h3>
+      <table class="tbl">
+        <tr><th>Attribute</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>[Tags("Tên")]</code></td><td>Gán nhóm hiển thị trong Swagger UI. Nhiều action có thể cùng tag.</td></tr>
+        <tr><td><code>[EndpointSummary("...")]</code></td><td>Dòng tóm tắt ngắn, hiển thị ngay bên cạnh tên endpoint.</td></tr>
+        <tr><td><code>[EndpointDescription("...")]</code></td><td>Mô tả dài hơn, hiển thị khi mở rộng endpoint.</td></tr>
+        <tr><td><code>[EndpointName("...")]</code></td><td>Đặt <em>operationId</em> trong OpenAPI spec (dùng cho client code generation).</td></tr>
+        <tr><td><code>[ProducesResponseType&lt;T&gt;(statusCode)]</code></td><td>Khai báo kiểu dữ liệu và status code mà action có thể trả về. Giúp OpenAPI sinh schema response chính xác.</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> <code>[ProducesResponseType]</code> rất quan trọng khi action có thể trả về nhiều status code khác nhau (200, 204, 404, …). Không khai báo thì OpenAPI không thể biết được schema response đầy đủ.</p>
+      </div>
+
+      <h3>Dùng XML Comments</h3>
+      <p>Ngoài attribute, bạn có thể dùng XML doc comments (<code>&lt;summary&gt;</code>, <code>&lt;param&gt;</code>, <code>&lt;returns&gt;</code>) để mô tả. Cần bật XML documentation trong file <code>.csproj</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">LearnApiDocument.csproj</span><span class="lang">xml</span></div>
+        <pre><code>&lt;PropertyGroup&gt;
+  &lt;GenerateDocumentationFile&gt;true&lt;/GenerateDocumentationFile&gt;
+  &lt;NoWarn&gt;$(NoWarn);1591&lt;/NoWarn&gt;
+&lt;/PropertyGroup&gt;</code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>/// &lt;summary&gt;
+/// Lấy tất cả dự báo thời tiết trong 5 ngày tới.
+/// &lt;/summary&gt;
+/// &lt;returns&gt;Danh sách &lt;see cref="WeatherForecast"/&gt;&lt;/returns&gt;
+[HttpGet]
+[ProducesResponseType&lt;IEnumerable&lt;WeatherForecast&gt;&gt;(StatusCodes.Status200OK)]
+public IEnumerable&lt;WeatherForecast&gt; GetAll() { /* ... */ }</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Khi dùng XML comments, Swashbuckle cần được cấu hình thêm để đọc file XML. Với <code>Microsoft.AspNetCore.OpenApi</code> thuần (.NET 9), XML comments được hỗ trợ tự động khi bật <code>GenerateDocumentationFile</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Versioning cho Web API</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Web API Versioning</em></p>
+
+      <p><strong>API Versioning</strong> cho phép duy trì nhiều phiên bản của cùng một endpoint song song, giúp client cũ không bị ảnh hưởng khi API thay đổi. Với controller-based API, cần cài hai NuGet package riêng (khác với Minimal API).</p>
+
+      <h3>Cài NuGet packages</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Asp.Versioning.Mvc          # versioning cho controller
+dotnet add package Asp.Versioning.Mvc.ApiExplorer # tích hợp với API Explorer</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Với <strong>Minimal API</strong> dùng <code>Asp.Versioning.Http</code>. Với <strong>Controller-based API</strong> phải dùng <code>Asp.Versioning.Mvc</code> — đây là điểm khác biệt then chốt.</p>
+      </div>
+
+      <h3>Cấu trúc thư mục</h3>
+      <p>Tổ chức controller theo thư mục version để rõ ràng:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Cấu trúc project</span><span class="lang">text</span></div>
+        <pre><code>Controllers/
+  V1/
+    WeatherForecastController.cs   // namespace ...V1
+  V2/
+    WeatherForecastController.cs   // namespace ...V2</code></pre>
+      </div>
+
+      <h3>Đánh dấu phiên bản trên Controller</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/V1/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace LearnApiDocument.Controllers.V1;
+
+[ApiController]
+[Route("[controller]")]
+[ApiVersion("1.0")]
+public class WeatherForecastController : ControllerBase
+{
+    [HttpGet]
+    public IEnumerable&lt;WeatherForecast&gt; GetAll()
+    {
+        // phiên bản 1: dự báo từ ngày mai, 5 ngày
+        return Enumerable.Range(1, 5).Select(i =&gt; new WeatherForecast
+        {
+            Date         = DateOnly.FromDateTime(DateTime.Now.AddDays(i)),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary      = "V1 - " + Summaries[Random.Shared.Next(Summaries.Length)]
+        });
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/V2/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace LearnApiDocument.Controllers.V2;
+
+[ApiController]
+[Route("[controller]")]
+[ApiVersion("2.0")]
+public class WeatherForecastController : ControllerBase
+{
+    [HttpGet]
+    public IEnumerable&lt;WeatherForecast&gt; GetAll()
+    {
+        // phiên bản 2: dự báo từ ngày 6 trở đi
+        return Enumerable.Range(6, 5).Select(i =&gt; new WeatherForecast
+        {
+            Date         = DateOnly.FromDateTime(DateTime.Now.AddDays(i)),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary      = "V2 - " + Summaries[Random.Shared.Next(Summaries.Length)]
+        });
+    }
+}</code></pre>
+      </div>
+
+      <h3>Cấu hình versioning trong Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddOpenApi();
+
+builder.Services.AddApiVersioning(options =&gt;
+{
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.ReportApiVersions = true;
+    // đọc version từ query string: ?api-version=1.0
+    options.ApiVersionReader = new QueryStringApiVersionReader("api-version");
+})
+.AddMvc(); // BẮT BUỘC với controller — thiếu dòng này versioning không hoạt động
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(o =&gt; o.SwaggerEndpoint("/openapi/v1.json", "API V1"));
+}
+
+app.MapControllers();
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> <strong>Bắt buộc gọi <code>.AddMvc()</code></strong> sau <code>AddApiVersioning()</code> khi dùng controller. Đây là điểm khác biệt duy nhất so với Minimal API. Thiếu lời gọi này, versioning sẽ hoàn toàn không hoạt động dù không có lỗi compile.</p>
+      </div>
+
+      <h3>Kiểm tra</h3>
+      <p>Gọi API với query string <code>api-version</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal</span><span class="lang">bash</span></div>
+        <pre><code># Gọi phiên bản 1 — dự báo từ ngày mai
+GET /WeatherForecast?api-version=1.0
+
+# Gọi phiên bản 2 — dự báo từ ngày 6 trở đi
+GET /WeatherForecast?api-version=2.0</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Ngoài query string, bạn có thể dùng URL segment (<code>/v1/weatherforecast</code>) hoặc HTTP header để truyền version number, bằng cách thay <code>QueryStringApiVersionReader</code> bằng <code>UrlSegmentApiVersionReader</code> hoặc <code>HeaderApiVersionReader</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Tài liệu hóa nhiều phiên bản</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Document multiple versions</em></p>
+
+      <p>Sau khi đã cấu hình versioning, bước tiếp theo là làm cho Swagger UI hiển thị tài liệu riêng biệt cho từng phiên bản API. Quy trình gồm ba phần: cấu hình nhiều OpenAPI document, tích hợp ApiExplorer, và gán group name cho controller.</p>
+
+      <h3>Bước 1 — Cấu hình nhiều OpenAPI document</h3>
+      <p>Mỗi phiên bản cần một OpenAPI document riêng, được phân biệt bằng <code>documentName</code>. Group name phải khớp với tên document:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddOpenApi("v1"); // document cho version 1
+builder.Services.AddOpenApi("v2"); // document cho version 2</code></pre>
+      </div>
+
+      <h3>Bước 2 — Tích hợp ApiExplorer với versioning</h3>
+      <p>Gọi <code>.AddApiExplorer()</code> để ApiExplorer nhận biết các phiên bản API đã đăng ký:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>builder.Services.AddApiVersioning(options =&gt;
+{
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.ReportApiVersions = true;
+    options.ApiVersionReader = new QueryStringApiVersionReader("api-version");
+})
+.AddMvc()
+.AddApiExplorer(options =&gt;
+{
+    // đặt format tên group: 'v' + major version
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
+});</code></pre>
+      </div>
+
+      <h3>Bước 3 — Gán group name cho Controller</h3>
+      <p>Dùng attribute <code>[ApiExplorerSettings(GroupName = "...")]</code> để chỉ định controller này thuộc document nào. Group name phải khớp với tên document truyền vào <code>AddOpenApi("v1")</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/V1/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("[controller]")]
+[ApiVersion("1.0")]
+[ApiExplorerSettings(GroupName = "v1")] // gán vào document "v1"
+public class WeatherForecastController : ControllerBase
+{
+    // ...
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/V2/WeatherForecastController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("[controller]")]
+[ApiVersion("2.0")]
+[ApiExplorerSettings(GroupName = "v2")] // gán vào document "v2"
+public class WeatherForecastController : ControllerBase
+{
+    // ...
+}</code></pre>
+      </div>
+
+      <h3>Bước 4 — Map OpenAPI endpoints và cấu hình Swagger UI nhiều version</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs (hoàn chỉnh)</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddOpenApi("v1");
+builder.Services.AddOpenApi("v2");
+
+builder.Services.AddApiVersioning(options =&gt;
+{
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.ReportApiVersions = true;
+    options.ApiVersionReader = new QueryStringApiVersionReader("api-version");
+})
+.AddMvc()
+.AddApiExplorer(options =&gt;
+{
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
+});
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi("/openapi/{documentName}.json"); // pattern chứa {documentName}
+
+    app.UseSwaggerUI(options =&gt;
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "API V1");
+        options.SwaggerEndpoint("/openapi/v2.json", "API V2");
+    });
+}
+
+app.MapControllers();
+app.Run();</code></pre>
+      </div>
+
+      <h3>Kết quả</h3>
+      <p>Swagger UI sẽ có dropdown để chọn phiên bản. Mỗi phiên bản hiển thị tập endpoint tương ứng:</p>
+      <ul>
+        <li><strong>API V1</strong>: endpoint <code>GET /WeatherForecast</code> thuộc controller V1 (dự báo từ ngày mai).</li>
+        <li><strong>API V2</strong>: endpoint <code>GET /WeatherForecast</code> thuộc controller V2 (dự báo từ ngày 6).</li>
+      </ul>
+      <p>Gọi thử trong Swagger UI sẽ yêu cầu nhập <code>api-version=1</code> hoặc <code>api-version=2</code>.</p>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span> <strong>Ba điều không được quên khi tài liệu hóa nhiều phiên bản controller:</strong></p>
+        <ol>
+          <li>Gọi <code>.AddMvc()</code> sau <code>AddApiVersioning()</code> — bắt buộc với controller.</li>
+          <li>Gọi <code>.AddApiExplorer()</code> — để ApiExplorer nhận biết phiên bản.</li>
+          <li>Đặt <code>[ApiExplorerSettings(GroupName = "vN")]</code> trên mỗi controller — để endpoint xuất hiện đúng document.</li>
+        </ol>
+        <p>Thiếu bất kỳ bước nào, document tương ứng sẽ trống rỗng dù không có lỗi runtime.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-22.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">22 · Minimal API — Documentation &amp; Versioning</div>
+      </a>
+      <a class="next" href="lesson-24.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">24 · Entity Framework Core</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

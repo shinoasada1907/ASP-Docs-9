@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 16 — Tag Helpers | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 16 — Tag Helpers</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Tag Helpers là gì</a></li>
+      <li><a href="#s2">2. Sinh URL với Tag Helpers</a></li>
+      <li><a href="#s3">3. Sửa thẻ &lt;form&gt; với Tag Helpers</a></li>
+      <li><a href="#s4">4. Sửa thẻ &lt;input&gt; với Tag Helpers</a></li>
+      <li><a href="#s5">5. Sinh &lt;option&gt; với asp-items</a></li>
+      <li><a href="#s6">6. Validation phía client</a></li>
+      <li><a href="#s7">7. Thêm version number với asp-append-version</a></li>
+      <li><a href="#s8">8. Tải Partial View và View Component</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 16</span>
+      <h1>Tag Helpers</h1>
+      <p class="lead">Tag Helpers trong Razor — sinh URL tự động, sửa thuộc tính form/input/option, kích hoạt validation phía client, thêm version number cho tài nguyên tĩnh, và tải Partial View cùng View Component theo cú pháp HTML thuần.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Tag Helpers là gì</h2>
+      <p class="subvideo-meta">Bài 1 · <em>What are Tag Helpers</em></p>
+
+      <p><strong>Tag Helper</strong> là các thành phần phía server cho phép chúng ta thêm các <em>thuộc tính tùy chỉnh</em> vào phần tử HTML trong file Razor (.cshtml). Khi Razor Engine xử lý view, nó nhận ra các thuộc tính đặc biệt này (ví dụ <code>asp-controller</code>, <code>asp-for</code>…) và tự động sinh ra HTML tương ứng dựa trên dữ liệu của ứng dụng.</p>
+
+      <h3>Tại sao cần Tag Helpers?</h3>
+      <p>Khi viết HTML thuần, chúng ta thường phải tự điền các URL, tên field, kiểu dữ liệu… bằng tay. Điều này dễ gây lỗi khi route hoặc tên property thay đổi. Tag Helpers giải quyết điều này bằng cách <em>kéo thông tin từ server</em> (controller, action, model class…) để sinh HTML chính xác.</p>
+
+      <table class="tbl">
+        <tr><th>Vấn đề với HTML thuần</th><th>Giải pháp với Tag Helper</th></tr>
+        <tr><td>Viết cứng URL trong <code>href</code></td><td><code>asp-controller</code> + <code>asp-action</code> tự sinh URL</td></tr>
+        <tr><td>Tự điền <code>name</code>, <code>id</code>, <code>type</code> cho <code>&lt;input&gt;</code></td><td><code>asp-for</code> đọc từ property của model</td></tr>
+        <tr><td>Tự viết anti-forgery token</td><td>Form Tag Helper tự thêm hidden token</td></tr>
+        <tr><td>Tự thêm query string version cho ảnh/JS</td><td><code>asp-append-version</code> tự tính hash</td></tr>
+      </table>
+
+      <h3>Cách hoạt động</h3>
+      <p>Tag Helper thực chất là một thuộc tính HTML — nhưng không phải thuộc tính HTML chuẩn, mà là thuộc tính mà Razor Engine hiểu. Ví dụ:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Home/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;!-- Razor (Tag Helper) --&gt;
+&lt;a asp-controller="Home" asp-action="Index"&gt;Trang chủ&lt;/a&gt;
+
+&lt;!-- HTML được sinh ra --&gt;
+&lt;a href="/Home/Index"&gt;Trang chủ&lt;/a&gt;</code></pre>
+      </div>
+
+      <p>Thuộc tính <code>asp-controller</code> không phải HTML chuẩn — đây là Tag Helper. Razor đọc nó, tra cứu route tương ứng với controller <code>Home</code> và action <code>Index</code>, rồi sinh ra <code>href</code> đúng.</p>
+
+      <h3>Kích hoạt Tag Helpers</h3>
+      <p>Để dùng Tag Helpers trong tất cả view của một vùng, thêm dòng sau vào file <code>_ViewImports.cshtml</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/_ViewImports.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Cú pháp <code>@addTagHelper *, AssemblyName</code> có nghĩa là: đăng ký <strong>tất cả</strong> Tag Helper (<code>*</code>) trong assembly chỉ định. Template ASP.NET Core MVC tự thêm dòng này vào <code>_ViewImports.cshtml</code> nên thường đã có sẵn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Sinh URL với Tag Helpers</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Generating URL with Tag Helpers</em></p>
+
+      <p>Tag Helpers phổ biến nhất dùng để sinh URL là nhóm thuộc tính trên thẻ <code>&lt;a&gt;</code>. Một URL trong ASP.NET Core MVC thường có cấu trúc:</p>
+      <pre><code>/{controller}/{action}/{id}?queryKey=value</code></pre>
+
+      <p>Ba phần tương ứng với ba loại thuộc tính Tag Helper:</p>
+      <table class="tbl">
+        <tr><th>Phần URL</th><th>Tag Helper</th><th>Ví dụ</th></tr>
+        <tr><td>Controller</td><td><code>asp-controller</code></td><td><code>asp-controller="Employee"</code></td></tr>
+        <tr><td>Action</td><td><code>asp-action</code></td><td><code>asp-action="Edit"</code></td></tr>
+        <tr><td>Route parameter</td><td><code>asp-route-{name}</code></td><td><code>asp-route-id="@Model.Id"</code></td></tr>
+        <tr><td>Query string</td><td><code>asp-route-{key}</code></td><td><code>asp-route-page="2"</code></td></tr>
+      </table>
+
+      <h3>Ví dụ thực tế</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Employee/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model IEnumerable&lt;Employee&gt;
+
+&lt;table&gt;
+@foreach (var emp in Model)
+{
+    &lt;tr&gt;
+        &lt;td&gt;@emp.Name&lt;/td&gt;
+        &lt;td&gt;
+            &lt;!-- Sinh URL: /Employee/Edit/5 --&gt;
+            &lt;a asp-controller="Employee"
+               asp-action="Edit"
+               asp-route-id="@emp.Id"&gt;Sửa&lt;/a&gt;
+
+            &lt;!-- Sinh URL: /Employee/Details/5 --&gt;
+            &lt;a asp-controller="Employee"
+               asp-action="Details"
+               asp-route-id="@emp.Id"&gt;Chi tiết&lt;/a&gt;
+        &lt;/td&gt;
+    &lt;/tr&gt;
+}
+&lt;/table&gt;
+
+&lt;!-- Link không có route param: /Employee/Create --&gt;
+&lt;a asp-controller="Employee" asp-action="Create"
+   class="btn btn-primary"&gt;Thêm mới&lt;/a&gt;</code></pre>
+      </div>
+
+      <p>HTML được sinh ra tự động đúng theo route table — nếu sau này bạn thay đổi route template, chỉ cần cập nhật một nơi, tất cả link tự cập nhật theo.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Khi dùng <strong>Razor Pages</strong> thay vì MVC, thay <code>asp-controller</code>/<code>asp-action</code> bằng <code>asp-page</code> (tên Razor Page) và <code>asp-page-handler</code> (tên handler method). Ví dụ: <code>asp-page="/Employees/Edit"</code> <code>asp-route-id="@emp.Id"</code>.</p>
+      </div>
+
+      <h3>So sánh: viết tay vs Tag Helper</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Trước (viết tay)</span><span class="lang">html</span></div>
+        <pre><code>&lt;a href="/Employee/Edit/@emp.Id"&gt;Sửa&lt;/a&gt;</code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span class="fname">Sau (Tag Helper)</span><span class="lang">razor</span></div>
+        <pre><code>&lt;a asp-controller="Employee" asp-action="Edit" asp-route-id="@emp.Id"&gt;Sửa&lt;/a&gt;</code></pre>
+      </div>
+      <p>Với Tag Helper, nếu route thay đổi (ví dụ thêm tiền tố <code>/app</code>), URL sinh ra vẫn luôn đúng vì nó được tính từ route table chứ không phải chuỗi cứng.</p>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Sửa thẻ &lt;form&gt; với Tag Helpers</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Modify form tag with Tag Helpers</em></p>
+
+      <p>Form Tag Helper hoạt động tương tự Anchor Tag Helper nhưng áp dụng lên thẻ <code>&lt;form&gt;</code>. Nó có hai chức năng chính:</p>
+      <ol class="steps">
+        <li>Sinh thuộc tính <code>action</code> (URL đích) dựa trên controller/action hoặc Razor Page.</li>
+        <li>Tự động chèn <strong>anti-forgery hidden token</strong> vào bên trong form để chống tấn công CSRF.</li>
+      </ol>
+
+      <h3>Cú pháp — MVC Controller</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Employee/Edit.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Employee
+
+&lt;!-- Form Tag Helper cho MVC --&gt;
+&lt;form asp-controller="Employee"
+      asp-action="Edit"
+      asp-route-id="@Model.Id"
+      method="post"&gt;
+
+    &lt;!-- Các input bên trong --&gt;
+    &lt;input asp-for="Name" class="form-control" /&gt;
+
+    &lt;button type="submit"&gt;Lưu&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;!-- HTML được sinh ra: --&gt;
+&lt;!--
+&lt;form action="/Employee/Edit/5" method="post"&gt;
+    &lt;input type="text" id="Name" name="Name" value="John Doe" class="form-control" /&gt;
+    &lt;input name="__RequestVerificationToken" type="hidden" value="..." /&gt;
+    &lt;button type="submit"&gt;Lưu&lt;/button&gt;
+&lt;/form&gt;
+--&gt;</code></pre>
+      </div>
+
+      <h3>Cú pháp — Razor Pages</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model EditModel
+
+&lt;!-- asp-page: tên Razor Page; asp-page-handler: tên method xử lý --&gt;
+&lt;form asp-page="/Employees/Edit"
+      asp-page-handler="Save"
+      asp-route-id="@Model.Employee.Id"
+      method="post"&gt;
+
+    &lt;input asp-for="Employee.Name" class="form-control" /&gt;
+    &lt;button type="submit"&gt;Lưu&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;!-- Form xóa (gọi handler Delete) --&gt;
+&lt;form asp-page="/Employees/Edit"
+      asp-page-handler="Delete"
+      asp-route-id="@Model.Employee.Id"
+      method="post"&gt;
+    &lt;button type="submit" class="btn btn-danger"&gt;Xóa&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔐</span><strong>Anti-forgery token tự động:</strong> Khi dùng Form Tag Helper, ASP.NET Core tự chèn <code>&lt;input type="hidden" name="__RequestVerificationToken" /&gt;</code> vào bên trong form. Bạn <strong>không cần</strong> gọi <code>@Html.AntiForgeryToken()</code> nữa. Nếu dùng MVC với <code>[ValidateAntiForgeryToken]</code> trên action, token này sẽ được kiểm tra tự động.</p>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Khi chuyển từ HTML thủ công sang Form Tag Helper, hãy <strong>xóa</strong> dòng <code>@Html.AntiForgeryToken()</code> (nếu có) để tránh token bị thêm hai lần trong form.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Sửa thẻ &lt;input&gt; với Tag Helpers</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Modify Input element with Tag Helpers</em></p>
+
+      <p>Input Tag Helper dùng thuộc tính <code>asp-for</code> để liên kết một <code>&lt;input&gt;</code> với một property của model. Chỉ cần một thuộc tính này, Tag Helper tự sinh ra đầy đủ <code>type</code>, <code>name</code>, <code>id</code> và <code>value</code>.</p>
+
+      <h3>Quy tắc sinh thuộc tính từ asp-for</h3>
+      <table class="tbl">
+        <tr><th>Thuộc tính HTML</th><th>Nguồn gốc</th></tr>
+        <tr><td><code>name</code></td><td>Tên property (dùng cho model binding khi post)</td></tr>
+        <tr><td><code>id</code></td><td>Tên property (dùng để label liên kết)</td></tr>
+        <tr><td><code>type</code></td><td>Suy ra từ kiểu dữ liệu C# hoặc Data Annotation (<code>string</code> → <code>text</code>, <code>int</code> → <code>number</code>, <code>[EmailAddress]</code> → <code>email</code>…)</td></tr>
+        <tr><td><code>value</code></td><td>Giá trị hiện tại của property trong model</td></tr>
+        <tr><td><code>data-val-*</code></td><td>Attributes phục vụ validation phía client (xem Bài 6)</td></tr>
+      </table>
+
+      <h3>Ví dụ — Form nhập thông tin nhân viên</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Employee.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class Employee
+{
+    public int Id { get; set; }
+
+    [Required, MaxLength(100)]
+    public string Name { get; set; } = string.Empty;
+
+    [Range(0, 1_000_000)]
+    public decimal Salary { get; set; }
+
+    [EmailAddress]
+    public string? Email { get; set; }
+
+    public int DepartmentId { get; set; }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Employee/_EmployeeDetail.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Employee
+
+&lt;!-- asp-for="Name" sinh ra:
+     type="text", name="Name", id="Name", value="@Model.Name"
+     + data-val-required, data-val-maxlength --&gt;
+&lt;div class="mb-3"&gt;
+    &lt;label asp-for="Name" class="form-label"&gt;&lt;/label&gt;
+    &lt;input asp-for="Name" class="form-control" /&gt;
+    &lt;span asp-validation-for="Name" class="text-danger"&gt;&lt;/span&gt;
+&lt;/div&gt;
+
+&lt;!-- asp-for="Salary" sinh type="number" vì kiểu decimal --&gt;
+&lt;div class="mb-3"&gt;
+    &lt;label asp-for="Salary" class="form-label"&gt;&lt;/label&gt;
+    &lt;input asp-for="Salary" class="form-control" /&gt;
+    &lt;span asp-validation-for="Salary" class="text-danger"&gt;&lt;/span&gt;
+&lt;/div&gt;
+
+&lt;!-- asp-for="Email" sinh type="email" nhờ [EmailAddress] --&gt;
+&lt;div class="mb-3"&gt;
+    &lt;label asp-for="Email" class="form-label"&gt;&lt;/label&gt;
+    &lt;input asp-for="Email" class="form-control" /&gt;
+    &lt;span asp-validation-for="Email" class="text-danger"&gt;&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> <strong>Label Tag Helper</strong> (<code>&lt;label asp-for="Name"&gt;</code>) cũng tự điền thuộc tính <code>for="Name"</code> và lấy tên hiển thị từ <code>[Display(Name="...")]</code> nếu có. Kết hợp Label + Input + ValidationMessage Tag Helpers cho một trải nghiệm form chuẩn và nhất quán.</p>
+      </div>
+
+      <h3>So sánh: viết tay vs Tag Helper</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Trước (viết tay)</span><span class="lang">html</span></div>
+        <pre><code>&lt;input type="text"
+       name="Name"
+       id="Name"
+       value="@Model.Name"
+       class="form-control" /&gt;</code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span class="fname">Sau (Tag Helper)</span><span class="lang">razor</span></div>
+        <pre><code>&lt;input asp-for="Name" class="form-control" /&gt;</code></pre>
+      </div>
+      <p>Ngoài ra khi đổi tên property trong C# (ví dụ rename <code>Name</code> → <code>FullName</code>), Razor sẽ báo lỗi compile ngay thay vì để lỗi âm thầm ở runtime.</p>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Sinh &lt;option&gt; với asp-items</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Generate Option elements with Tag Helpers</em></p>
+
+      <p>Để điền danh sách lựa chọn cho thẻ <code>&lt;select&gt;</code>, Tag Helper cung cấp thuộc tính <code>asp-items</code>. Nó nhận vào một <code>IEnumerable&lt;SelectListItem&gt;</code> và tự sinh toàn bộ các thẻ <code>&lt;option&gt;</code>.</p>
+
+      <h3>Lớp SelectListItem</h3>
+      <p><code>SelectListItem</code> là class có sẵn trong <code>Microsoft.AspNetCore.Mvc.Rendering</code> với các property quan trọng:</p>
+      <table class="tbl">
+        <tr><th>Property</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>Text</code></td><td>Nội dung hiển thị của option</td></tr>
+        <tr><td><code>Value</code></td><td>Giá trị gửi lên server khi submit (thường là ID)</td></tr>
+        <tr><td><code>Selected</code></td><td>Có phải option đang được chọn không</td></tr>
+      </table>
+
+      <h3>Ví dụ — Chọn phòng ban cho nhân viên</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/EmployeeController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public IActionResult Edit(int id)
+{
+    var employee = _repo.GetById(id);
+    var departments = _repo.GetAllDepartments();
+
+    // Chuyển danh sách Department thành IEnumerable&lt;SelectListItem&gt;
+    ViewBag.DepartmentList = departments.Select(d =&gt; new SelectListItem
+    {
+        Text     = d.Name,
+        Value    = d.Id.ToString(),
+        Selected = d.Id == employee.DepartmentId
+    });
+
+    return View(employee);
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Employee/Edit.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Employee
+
+&lt;form asp-controller="Employee" asp-action="Edit"
+      asp-route-id="@Model.Id" method="post"&gt;
+
+    &lt;div class="mb-3"&gt;
+        &lt;label asp-for="DepartmentId" class="form-label"&gt;&lt;/label&gt;
+
+        &lt;!-- asp-for="DepartmentId" liên kết model binding
+             asp-items    nhận danh sách option từ ViewBag --&gt;
+        &lt;select asp-for="DepartmentId"
+                asp-items="ViewBag.DepartmentList"
+                class="form-select"&gt;
+            &lt;!-- Option mặc định "Chọn phòng ban" --&gt;
+            &lt;option value=""&gt;-- Chọn phòng ban --&lt;/option&gt;
+        &lt;/select&gt;
+
+        &lt;span asp-validation-for="DepartmentId" class="text-danger"&gt;&lt;/span&gt;
+    &lt;/div&gt;
+
+    &lt;button type="submit" class="btn btn-primary"&gt;Lưu&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Khi bạn khai báo một <code>&lt;option&gt;</code> thủ công bên trong thẻ <code>&lt;select&gt;</code> có <code>asp-items</code>, Tag Helper <strong>không ghi đè</strong> option đó mà <em>nối thêm</em> sau nó. Nhờ vậy có thể thêm option "mặc định" (placeholder) dễ dàng.</p>
+      </div>
+
+      <h3>Sử dụng SelectList để đơn giản hóa</h3>
+      <p>Thay vì LINQ thủ công, có thể dùng constructor <code>SelectList</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controller</span><span class="lang">csharp</span></div>
+        <pre><code>// SelectList(items, dataValueField, dataTextField, selectedValue)
+ViewBag.DepartmentList = new SelectList(
+    departments,
+    nameof(Department.Id),
+    nameof(Department.Name),
+    employee.DepartmentId
+);</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Validation phía client</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Client side form validations</em></p>
+
+      <p>Khi dùng <code>asp-for</code> trên một <code>&lt;input&gt;</code>, Tag Helper tự động đọc các <strong>Data Annotations</strong> (<code>[Required]</code>, <code>[Range]</code>, <code>[MaxLength]</code>…) từ model và thêm vào input các thuộc tính <code>data-val-*</code>. Thư viện JavaScript <strong>jQuery Unobtrusive Validation</strong> đọc các thuộc tính này để kiểm tra dữ liệu ngay trên trình duyệt mà không cần gửi request lên server.</p>
+
+      <h3>Các Tag Helpers liên quan đến validation</h3>
+      <table class="tbl">
+        <tr><th>Tag Helper</th><th>HTML sinh ra</th><th>Mục đích</th></tr>
+        <tr><td><code>asp-for</code> trên <code>&lt;input&gt;</code></td><td><code>data-val="true"</code> + <code>data-val-required</code>, <code>data-val-range</code>…</td><td>Gắn rules validation vào input</td></tr>
+        <tr><td><code>asp-validation-for</code> trên <code>&lt;span&gt;</code></td><td><code>&lt;span data-valmsg-for="Name"&gt;</code></td><td>Hiển thị thông báo lỗi cho từng field</td></tr>
+        <tr><td><code>asp-validation-summary</code> trên <code>&lt;div&gt;</code></td><td><code>&lt;div data-valmsg-summary="true"&gt;</code></td><td>Hiển thị tóm tắt tất cả lỗi</td></tr>
+      </table>
+
+      <h3>Cấu hình đầy đủ</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Employee.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class Employee
+{
+    public int Id { get; set; }
+
+    [Required(ErrorMessage = "Tên không được để trống")]
+    [MaxLength(100, ErrorMessage = "Tên tối đa 100 ký tự")]
+    public string Name { get; set; } = string.Empty;
+
+    [Range(0, 1_000_000, ErrorMessage = "Lương phải từ 0 đến 1.000.000")]
+    public decimal Salary { get; set; }
+
+    [Required]
+    public int DepartmentId { get; set; }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Employee/_EmployeeDetail.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Employee
+
+&lt;!-- Tóm tắt tất cả lỗi (hiện khi có lỗi server-side) --&gt;
+&lt;div asp-validation-summary="ModelOnly" class="text-danger"&gt;&lt;/div&gt;
+
+&lt;div class="mb-3"&gt;
+    &lt;label asp-for="Name" class="form-label"&gt;&lt;/label&gt;
+    &lt;input asp-for="Name" class="form-control" /&gt;
+    &lt;!-- Hiện lỗi tức thì phía client cho field Name --&gt;
+    &lt;span asp-validation-for="Name" class="text-danger"&gt;&lt;/span&gt;
+&lt;/div&gt;
+
+&lt;div class="mb-3"&gt;
+    &lt;label asp-for="Salary" class="form-label"&gt;&lt;/label&gt;
+    &lt;input asp-for="Salary" class="form-control" /&gt;
+    &lt;span asp-validation-for="Salary" class="text-danger"&gt;&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+      </div>
+
+      <h3>Bật thư viện JavaScript validation</h3>
+      <p>Validation phía client cần hai thư viện JS. Thêm chúng vào layout hoặc partial view dành riêng:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_ValidationScriptsPartial.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;script src="~/lib/jquery-validation/dist/jquery.validate.min.js"&gt;&lt;/script&gt;
+&lt;script src="~/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js"&gt;&lt;/script&gt;</code></pre>
+      </div>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Employee/Edit.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@section Scripts {
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span><strong>Lưu ý quan trọng:</strong> Validation phía client chỉ là UX bổ sung — nó có thể bị bỏ qua. Luôn phải kiểm tra <code>ModelState.IsValid</code> trong action phía server trước khi xử lý dữ liệu.</p>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Giá trị của <code>asp-validation-summary</code> có thể là: <code>"None"</code> (tắt), <code>"ModelOnly"</code> (chỉ lỗi model-level, không lặp lại lỗi field), hoặc <code>"All"</code> (hiện tất cả).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Thêm version number với asp-append-version</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Append Version Number with Tag Helpers</em></p>
+
+      <p>Trình duyệt thường <strong>cache</strong> các tài nguyên tĩnh (ảnh, CSS, JS) để tránh tải lại không cần thiết. Điều này gây ra vấn đề: khi bạn cập nhật file (ví dụ sửa <code>app.js</code>), trình duyệt vẫn dùng bản cũ từ cache vì tên file không đổi.</p>
+
+      <h3>Giải pháp truyền thống — thêm query string thủ công</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Thủ công (dễ quên cập nhật)</span><span class="lang">html</span></div>
+        <pre><code>&lt;script src="/js/app.js?v=2"&gt;&lt;/script&gt;
+&lt;link rel="stylesheet" href="/css/site.css?v=3" /&gt;</code></pre>
+      </div>
+
+      <h3>Giải pháp tốt hơn — asp-append-version</h3>
+      <p>Tag Helper <code>asp-append-version="true"</code> tự động tính <strong>hash của nội dung file</strong> và thêm vào URL dưới dạng query string. Mỗi khi file thay đổi, hash thay đổi → browser buộc phải tải lại.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_Layout.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;!-- CSS --&gt;
+&lt;link rel="stylesheet"
+      href="~/css/site.css"
+      asp-append-version="true" /&gt;
+
+&lt;!-- JavaScript --&gt;
+&lt;script src="~/js/app.js"
+        asp-append-version="true"&gt;&lt;/script&gt;
+
+&lt;!-- Hình ảnh --&gt;
+&lt;img src="~/images/logo.png"
+     asp-append-version="true"
+     alt="Logo" /&gt;
+
+&lt;!-- HTML được sinh ra (hash thay đổi mỗi khi file đổi): --&gt;
+&lt;!--
+&lt;link rel="stylesheet" href="/css/site.css?v=sha256-AbCdEf12..." /&gt;
+&lt;script src="/js/app.js?v=sha256-XyZ789..."&gt;&lt;/script&gt;
+&lt;img src="/images/logo.png?v=sha256-MnOpQr..." alt="Logo" /&gt;
+--&gt;</code></pre>
+      </div>
+
+      <h3>Điều kiện để asp-append-version hoạt động</h3>
+      <ol class="steps">
+        <li>File tài nguyên phải nằm trong thư mục <code>wwwroot/</code>.</li>
+        <li>Middleware <code>UseStaticFiles()</code> phải được đăng ký trong <code>Program.cs</code>.</li>
+        <li>Đường dẫn trong <code>src</code>/<code>href</code> phải bắt đầu bằng <code>~/</code> (ký hiệu wwwroot).</li>
+      </ol>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllersWithViews();
+
+var app = builder.Build();
+
+// Bắt buộc phải có để phục vụ file tĩnh từ wwwroot
+app.UseStaticFiles();
+
+app.UseRouting();
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Hash được tính dựa trên nội dung file, không phải thời gian sửa đổi. Nếu hai file có nội dung giống nhau, chúng sẽ có cùng hash — đây là hành vi đúng vì browser không cần tải lại.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Tải Partial View và View Component</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Load Partial Views and ViewComponents with Tag Helpers</em></p>
+
+      <p>Trước đây chúng ta tải Partial View và View Component bằng HTML Helpers (<code>@Html.Partial()</code>, <code>@await Component.InvokeAsync()</code>). Tag Helpers cung cấp cú pháp HTML-like gọn hơn và quen thuộc hơn với designer.</p>
+
+      <h3>Partial Tag Helper</h3>
+      <p>Thay vì <code>@await Html.PartialAsync("_EmployeeDetail", Model)</code>, dùng thẻ <code>&lt;partial&gt;</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Employee/Create.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Employee
+
+&lt;h2&gt;Thêm nhân viên mới&lt;/h2&gt;
+
+&lt;form asp-controller="Employee" asp-action="Create" method="post"&gt;
+
+    &lt;!-- Cách cũ (HTML Helper) --&gt;
+    @* @await Html.PartialAsync("_EmployeeDetail", Model) *@
+
+    &lt;!-- Cách mới (Tag Helper) --&gt;
+    &lt;partial name="_EmployeeDetail" model="Model" /&gt;
+
+    &lt;button type="submit" class="btn btn-primary"&gt;Tạo mới&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;!-- Partial không có model (chỉ cần name) --&gt;
+&lt;partial name="_SearchBar" /&gt;</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Thuộc tính</th><th>Bắt buộc</th><th>Mô tả</th></tr>
+        <tr><td><code>name</code></td><td>Có</td><td>Tên partial view (áp dụng quy tắc discovery giống HTML Helper)</td></tr>
+        <tr><td><code>model</code></td><td>Không</td><td>Object truyền vào partial view; bỏ qua nếu partial không cần model</td></tr>
+        <tr><td><code>view-data</code></td><td>Không</td><td>ViewDataDictionary bổ sung truyền vào partial</td></tr>
+      </table>
+
+      <h3>View Component Tag Helper</h3>
+      <p>View Component được gọi bằng thẻ có tiền tố <code>vc:</code>. Tên component dùng <strong>kebab-case</strong> (mỗi chữ hoa thêm dấu gạch ngang).</p>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Để dùng <code>vc:</code> Tag Helper, bạn phải thêm assembly của project vào <code>_ViewImports.cshtml</code> tương ứng:</p>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/_ViewImports.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@using MyApp
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@* Thêm assembly của project để dùng vc: Tag Helper *@
+@addTagHelper *, MyApp</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">ViewComponents/EmployeeListViewComponent.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public class EmployeeListViewComponent : ViewComponent
+{
+    private readonly IEmployeeRepository _repo;
+
+    public EmployeeListViewComponent(IEmployeeRepository repo)
+        =&gt; _repo = repo;
+
+    public async Task&lt;IViewComponentResult&gt; InvokeAsync(int departmentId)
+    {
+        var employees = await _repo.GetByDepartmentAsync(departmentId);
+        return View(employees);
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Departments/Edit.cshtml (Razor Page)</span><span class="lang">razor</span></div>
+        <pre><code>@model EditModel
+
+&lt;h2&gt;@Model.Department.Name&lt;/h2&gt;
+
+&lt;!-- Cách cũ (HTML Helper) --&gt;
+@* @await Component.InvokeAsync("EmployeeList", new { departmentId = Model.Department.Id }) *@
+
+&lt;!-- Cách mới (Tag Helper): EmployeeList -&gt; employee-list --&gt;
+&lt;vc:employee-list department-id="Model.Department.Id"&gt;&lt;/vc:employee-list&gt;
+
+&lt;!-- View Component không có tham số --&gt;
+&lt;vc:navigation-menu&gt;&lt;/vc:navigation-menu&gt;
+
+&lt;!-- View Component với nhiều tham số --&gt;
+&lt;vc:employee-list
+    department-id="Model.Department.Id"
+    page-size="10"&gt;
+&lt;/vc:employee-list&gt;</code></pre>
+      </div>
+
+      <h3>Quy tắc đặt tên vc: Tag Helper</h3>
+      <table class="tbl">
+        <tr><th>Tên ViewComponent (C#)</th><th>Tag Helper</th></tr>
+        <tr><td><code>EmployeeList</code></td><td><code>&lt;vc:employee-list&gt;</code></td></tr>
+        <tr><td><code>NavigationMenu</code></td><td><code>&lt;vc:navigation-menu&gt;</code></td></tr>
+        <tr><td><code>departmentId</code> (param)</td><td><code>department-id="..."</code></td></tr>
+        <tr><td><code>pageSize</code> (param)</td><td><code>page-size="..."</code></td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Tại sao dùng Tag Helper thay vì HTML Helper?</strong> Tag Helpers có cú pháp HTML thuần — designer có thể đọc và chỉnh sửa view mà không cần hiểu C#. IntelliSense trong Visual Studio cũng hoạt động tốt hơn với cú pháp Tag Helper. Tuy nhiên cả hai đều hợp lệ — bạn có thể trộn lẫn trong cùng một project.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-15.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">15 · Course Project — Employees Management</div>
+      </a>
+      <a class="next" href="lesson-17.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">17 · MVC &amp; Razor Pages — Dependency Injection</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 03 — Middleware Pipeline | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 03 — Middleware Pipeline</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Lý thuyết Middleware Pipeline</a></li>
+      <li><a href="#s2">2. app.Use — tạo middleware thông thường</a></li>
+      <li><a href="#s3">3. app.Run — tạo terminal middleware</a></li>
+      <li><a href="#s4">4. app.Map — rẽ nhánh pipeline</a></li>
+      <li><a href="#s5">5. app.MapWhen — rẽ nhánh có điều kiện phức tạp</a></li>
+      <li><a href="#s6">6. app.UseWhen — nhánh có thể rejoining</a></li>
+      <li><a href="#s7">7. Tránh lỗi khi ghi response</a></li>
+      <li><a href="#s8">8. Các middleware có sẵn (Built-in)</a></li>
+      <li><a href="#s9">9. Custom Middleware Class</a></li>
+      <li><a href="#s10">10. Bài tập 2 — Custom Exception Handling Middleware</a></li>
+      <li><a href="#s11">11. Bài tập 2 (đáp án) — Custom Exception Handling Middleware</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 03</span>
+      <h1>Middleware Pipeline</h1>
+      <p class="lead">Middleware là trái tim của ASP.NET Core. Chương này giải thích mô hình pipeline, cách sử dụng Use / Run / Map / MapWhen / UseWhen để xây dựng và rẽ nhánh pipeline, cách đóng gói middleware thành class tái sử dụng, và những điểm cần lưu ý khi viết response.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Lý thuyết Middleware Pipeline</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Middleware Pipeline Theory</em></p>
+
+      <p>Khi một HTTP request đến ứng dụng ASP.NET Core, Kestrel (web server tích hợp) nhận request, chuyển đổi thành đối tượng <code>HttpContext</code> rồi chuyển qua <strong>middleware pipeline</strong>. Pipeline là một chuỗi các <em>middleware component</em> được thực thi theo thứ tự, sau đó response đi ngược trở lại qua chính chuỗi đó.</p>
+
+      <h3>Tại sao cần middleware pipeline?</h3>
+      <p>Nếu không có pipeline, toàn bộ logic của ứng dụng (routing, authentication, authorization, logging, model validation, xử lý ngoại lệ, sinh response…) phải đặt vào một component duy nhất — rất khó bảo trì và mở rộng. Middleware pipeline cho phép <strong>tách các mối quan tâm (separation of concerns)</strong>: mỗi middleware chỉ làm một việc, có thể bật/tắt, sắp xếp lại theo ý muốn.</p>
+
+      <h3>Cơ chế hoạt động</h3>
+      <p>Pipeline hoạt động giống như một chuỗi lồng nhau (<em>Russian doll</em>): middleware số 1 bao quanh số 2, số 2 bao quanh số 3, và cứ thế tiếp tục.</p>
+      <ol class="steps">
+        <li>Request đến → middleware #1 xử lý phần <strong>trước</strong> (before).</li>
+        <li>Middleware #1 gọi <code>next(context)</code> → chuyển qua middleware #2.</li>
+        <li>Middleware #2 xử lý phần trước, gọi <code>next(context)</code> → chuyển qua middleware #3…</li>
+        <li>Middleware cuối (terminal) sinh response, <strong>không</strong> gọi <code>next</code>.</li>
+        <li>Luồng <strong>quay ngược</strong>: middleware #3 xử lý phần sau → trả về #2 → trả về #1 → response đến Kestrel → trả về browser.</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span><strong>Điểm mấu chốt:</strong> Middleware được đăng ký theo thứ tự trong <code>Program.cs</code> — thứ tự đó chính là thứ tự thực thi. Middleware đứng đầu luôn được gọi đầu tiên, và cũng là nơi cuối cùng có cơ hội xử lý response trước khi trả về client.</p>
+      </div>
+
+      <h3>Request Delegate</h3>
+      <p>Mỗi middleware thực chất là một <strong>request delegate</strong> — một hàm nhận <code>HttpContext</code> và trả về <code>Task</code>. Trong ASP.NET Core, kiểu này được định nghĩa là:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Định nghĩa</span><span class="lang">csharp</span></div>
+        <pre><code>public delegate Task RequestDelegate(HttpContext context);</code></pre>
+      </div>
+
+      <p>Khi một middleware muốn chuyển request cho middleware kế tiếp, nó gọi tham số <code>next</code> (cũng là một <code>RequestDelegate</code>) và truyền vào <code>context</code>.</p>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> app.Use — tạo middleware thông thường</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Use app.Use to create middleware</em></p>
+
+      <p><code>app.Use()</code> là phương thức chính để thêm middleware vào pipeline. Middleware tạo bởi <code>app.Use</code> có thể:</p>
+      <ul>
+        <li>Thực thi logic <strong>trước</strong> khi gọi <code>next</code> (xử lý request).</li>
+        <li>Gọi <code>await next(context)</code> để chuyển cho middleware tiếp theo.</li>
+        <li>Thực thi logic <strong>sau</strong> khi <code>next</code> hoàn thành (xử lý response trên đường về).</li>
+        <li><strong>Short-circuit</strong>: không gọi <code>next</code> nếu muốn dừng pipeline sớm.</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Middleware #1 — thông thường, gọi next
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+
+    await next(context); // chuyển sang #2
+
+    await context.Response.WriteAsync("Middleware #1: After calling next\r\n");
+});
+
+// Middleware #2 — short-circuit: không gọi next
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #2: Before calling next\r\n");
+
+    // await next(context);  &lt;-- comment out = dừng pipeline tại đây
+
+    await context.Response.WriteAsync("Middleware #2: After calling next\r\n");
+});
+
+// Middleware #3 — sẽ không được thực thi nếu #2 short-circuit
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #3: Before calling next\r\n");
+
+    await next(context);
+
+    await context.Response.WriteAsync("Middleware #3: After calling next\r\n");
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Output khi Middleware #2 short-circuit</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Response (text/plain)</span><span class="lang">text</span></div>
+        <pre><code>Middleware #1: Before calling next
+Middleware #2: Before calling next
+Middleware #2: After calling next
+Middleware #1: After calling next</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Phải dùng <code>await</code> khi gọi <code>next(context)</code>. Nếu bỏ <code>await</code>, dòng code phía sau <code>next(context)</code> có thể chạy song song với middleware kế tiếp, dẫn đến lỗi race condition trên response stream.</p>
+      </div>
+
+      <h3>Cú pháp ngắn gọn hơn (từ .NET 7+)</h3>
+      <p>ASP.NET Core cho phép viết gọn hơn bằng cách dùng <code>IMiddlewareFactory</code>-friendly overload:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Overload ngắn: (context, next) không cần khai báo kiểu tường minh
+app.Use(async (context, next) =&gt;
+{
+    // xử lý trước
+    await next(context);
+    // xử lý sau
+});</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> app.Run — tạo terminal middleware</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Use app.Run to create middleware</em></p>
+
+      <p><code>app.Run()</code> luôn tạo ra một <strong>terminal middleware</strong> — middleware cuối cùng trong pipeline. Nó <em>không</em> nhận tham số <code>next</code> nên không thể gọi middleware kế tiếp.</p>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Bất kỳ middleware nào đăng ký <em>sau</em> <code>app.Run()</code> sẽ <strong>không bao giờ được thực thi</strong> vì pipeline đã bị dừng lại.</p>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Middleware #1 — thông thường
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+
+    await next(context);
+
+    await context.Response.WriteAsync("Middleware #1: After calling next\r\n");
+});
+
+// Middleware #2 — terminal, không có tham số next
+app.Run(async (context) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #2: Processed.\r\n");
+});
+
+// Middleware #3 — KHÔNG BAO GIỜ được thực thi
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #3: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #3: After calling next\r\n");
+});
+
+app.Run(); // khởi động web server</code></pre>
+      </div>
+
+      <h3>Output</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Response (text/plain)</span><span class="lang">text</span></div>
+        <pre><code>Middleware #1: Before calling next
+Middleware #2: Processed.
+Middleware #1: After calling next</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Lưu ý <code>app.Run()</code> cuối file (không có tham số) là <strong>lệnh khởi động server</strong>, khác với <code>app.Run(delegate)</code> dùng để thêm terminal middleware.</p>
+      </div>
+
+      <h3>So sánh app.Use vs app.Run</h3>
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>app.Use</th><th>app.Run</th></tr>
+        <tr><td>Tham số delegate</td><td><code>(context, next)</code></td><td><code>(context)</code> — không có next</td></tr>
+        <tr><td>Có thể gọi next?</td><td>Có (tùy ý)</td><td>Không bao giờ</td></tr>
+        <tr><td>Luôn là terminal?</td><td>Chỉ khi không gọi next</td><td>Luôn luôn</td></tr>
+        <tr><td>Middleware sau nó</td><td>Vẫn được thực thi nếu next được gọi</td><td>Không bao giờ được thực thi</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> app.Map — rẽ nhánh pipeline</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Use app.Map to branch the pipeline</em></p>
+
+      <p><code>app.Map()</code> tạo ra một <strong>nhánh pipeline riêng biệt</strong> dựa trên <strong>đường dẫn URL (path prefix)</strong>. Khi request có path khớp với prefix được chỉ định, request sẽ đi vào nhánh đó và <em>không bao giờ quay lại pipeline chính</em>.</p>
+
+      <h3>Cú pháp</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Middleware #1 — pipeline chính
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #1: After calling next\r\n");
+});
+
+// Nhánh riêng: chỉ áp dụng khi path bắt đầu bằng "/employees"
+app.Map("/employees", (appBuilder) =&gt;
+{
+    appBuilder.Use(async (HttpContext context, RequestDelegate next) =&gt;
+    {
+        await context.Response.WriteAsync("Middleware #5: Before calling next\r\n");
+        await next(context);
+        await context.Response.WriteAsync("Middleware #5: After calling next\r\n");
+    });
+
+    appBuilder.Use(async (HttpContext context, RequestDelegate next) =&gt;
+    {
+        await context.Response.WriteAsync("Middleware #6: Before calling next\r\n");
+        await next(context);
+        await context.Response.WriteAsync("Middleware #6: After calling next\r\n");
+    });
+});
+
+// Middleware #2 — chỉ chạy khi path KHÔNG khớp "/employees"
+app.Use(async (context, next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #2: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #2: After calling next\r\n");
+});
+
+// Middleware #3 — chỉ chạy khi path KHÔNG khớp "/employees"
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #3: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #3: After calling next\r\n");
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Minh họa luồng thực thi</h3>
+      <table class="tbl">
+        <tr><th>Request path</th><th>Thứ tự middleware thực thi</th></tr>
+        <tr><td><code>GET /</code></td><td>#1 → #2 → #3 (pipeline chính)</td></tr>
+        <tr><td><code>GET /employees</code></td><td>#1 → #5 → #6 (nhánh /employees, không về #2, #3)</td></tr>
+        <tr><td><code>GET /employees/123</code></td><td>#1 → #5 → #6 (nhánh /employees, path prefix khớp)</td></tr>
+      </table>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><code>app.Map()</code> khớp theo <strong>prefix</strong>, không phải exact match. <code>/employees/123</code> vẫn vào nhánh <code>/employees</code>. Nhánh rẽ bởi <code>Map</code> <strong>không rejoining</strong> về pipeline chính — đây là đặc điểm phân biệt với <code>UseWhen</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> app.MapWhen — rẽ nhánh có điều kiện phức tạp</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Use app.MapWhen to branch the pipeline</em></p>
+
+      <p><code>app.Map()</code> chỉ cho phép điều kiện là <em>path prefix</em>. Khi cần rẽ nhánh dựa trên điều kiện phức tạp hơn (query string, header, method HTTP, body…), dùng <code>app.MapWhen()</code>.</p>
+
+      <h3>Cú pháp</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Middleware #1
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #1: After calling next\r\n");
+});
+
+// Rẽ nhánh: path = /employees VÀ có query string "id"
+app.MapWhen(
+    (context) =&gt;
+    {
+        return context.Request.Path.StartsWithSegments("/employees") &amp;&amp;
+               context.Request.Query.ContainsKey("id");
+    },
+    (appBuilder) =&gt;
+    {
+        appBuilder.Use(async (HttpContext context, RequestDelegate next) =&gt;
+        {
+            await context.Response.WriteAsync("Middleware #5: Before calling next\r\n");
+            await next(context);
+            await context.Response.WriteAsync("Middleware #5: After calling next\r\n");
+        });
+
+        appBuilder.Use(async (HttpContext context, RequestDelegate next) =&gt;
+        {
+            await context.Response.WriteAsync("Middleware #6: Before calling next\r\n");
+            await next(context);
+            await context.Response.WriteAsync("Middleware #6: After calling next\r\n");
+        });
+    });
+
+// Middleware #2 — chỉ chạy khi điều kiện MapWhen KHÔNG thỏa
+app.Use(async (context, next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #2: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #2: After calling next\r\n");
+});
+
+// Middleware #3
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #3: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #3: After calling next\r\n");
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Tham số của MapWhen</h3>
+      <table class="tbl">
+        <tr><th>Tham số</th><th>Kiểu</th><th>Mô tả</th></tr>
+        <tr><td>predicate</td><td><code>Func&lt;HttpContext, bool&gt;</code></td><td>Hàm nhận <code>HttpContext</code>, trả về <code>true/false</code>. Toàn bộ context có thể được kiểm tra.</td></tr>
+        <tr><td>configuration</td><td><code>Action&lt;IApplicationBuilder&gt;</code></td><td>Hành động cấu hình nhánh pipeline mới.</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Vì có thể truy cập toàn bộ <code>HttpContext</code>, <code>MapWhen</code> có thể đưa ra quyết định dựa trên bất kỳ thứ gì: header <code>Authorization</code>, request method, content-type, claim của user… Tuy nhiên tương tự <code>Map</code>, nhánh này <strong>không rejoining</strong> về pipeline chính.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> app.UseWhen — nhánh có thể rejoining</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Use app.UseWhen to create rejoinable branch</em></p>
+
+      <p><code>app.UseWhen()</code> hoạt động giống <code>MapWhen</code> về cú pháp điều kiện, nhưng có điểm khác biệt quan trọng: sau khi nhánh thực thi xong, request <strong>quay về và rejoining</strong> pipeline chính từ điểm ngay sau chỗ <code>UseWhen</code> được đặt.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Middleware #1
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #1: After calling next\r\n");
+});
+
+// UseWhen: rẽ nhánh có điều kiện, SAU ĐÓ rejoining pipeline chính
+app.UseWhen(
+    (context) =&gt;
+    {
+        return context.Request.Path.StartsWithSegments("/employees") &amp;&amp;
+               context.Request.Query.ContainsKey("id");
+    },
+    (appBuilder) =&gt;
+    {
+        appBuilder.Use(async (HttpContext context, RequestDelegate next) =&gt;
+        {
+            await context.Response.WriteAsync("Middleware #5: Before calling next\r\n");
+            await next(context);
+            await context.Response.WriteAsync("Middleware #5: After calling next\r\n");
+        });
+
+        appBuilder.Use(async (HttpContext context, RequestDelegate next) =&gt;
+        {
+            await context.Response.WriteAsync("Middleware #6: Before calling next\r\n");
+            await next(context);
+            await context.Response.WriteAsync("Middleware #6: After calling next\r\n");
+        });
+    });
+
+// Middleware #2 — được thực thi dù điều kiện UseWhen có thỏa hay không
+app.Use(async (context, next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #2: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #2: After calling next\r\n");
+});
+
+// Middleware #3
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #3: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #3: After calling next\r\n");
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>So sánh Map / MapWhen / UseWhen</h3>
+      <table class="tbl">
+        <tr><th>Phương thức</th><th>Điều kiện rẽ nhánh</th><th>Rejoining pipeline chính?</th></tr>
+        <tr><td><code>app.Map(path)</code></td><td>Path prefix (string cố định)</td><td>Không</td></tr>
+        <tr><td><code>app.MapWhen(predicate)</code></td><td>Bất kỳ điều kiện nào trên <code>HttpContext</code></td><td>Không</td></tr>
+        <tr><td><code>app.UseWhen(predicate)</code></td><td>Bất kỳ điều kiện nào trên <code>HttpContext</code></td><td><strong>Có</strong> — tự động rejoining</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span>Dùng <code>UseWhen</code> khi bạn muốn chạy thêm một vài middleware có điều kiện (ví dụ: logging đặc biệt, kiểm tra header) nhưng sau đó vẫn để pipeline chính tiếp tục xử lý (routing, endpoint…). Dùng <code>MapWhen</code> khi nhánh đó hoàn toàn độc lập và không cần pipeline chính nữa.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Tránh lỗi khi ghi response</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Avoid problems when writing response</em></p>
+
+      <p>Khi middleware gọi <code>context.Response.WriteAsync()</code>, ASP.NET Core bắt đầu <strong>gửi response headers</strong> đến client. Sau thời điểm đó, việc thay đổi headers (status code, Content-Type, custom headers…) sẽ gây lỗi vì headers đã được flush xuống stream.</p>
+
+      <h3>Lỗi phổ biến</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — SAI (header sau WriteAsync)</span><span class="lang">csharp</span></div>
+        <pre><code>app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+
+    // LỖI: headers đã bị flush, không thể đặt header nữa
+    context.Response.Headers["My-Header"] = "My-Header-Content";
+    context.Response.StatusCode = 201;
+
+    await next(context);
+});</code></pre>
+      </div>
+
+      <h3>Cách đúng: đặt headers TRƯỚC khi WriteAsync</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — ĐÚNG (header trước WriteAsync)</span><span class="lang">csharp</span></div>
+        <pre><code>app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    // Đặt headers TRƯỚC khi ghi body
+    context.Response.Headers["My-Header"] = "My-Header-Content";
+    context.Response.StatusCode = 200;
+
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+
+    await next(context);
+});</code></pre>
+      </div>
+
+      <h3>Kiểm tra xem response đã bắt đầu chưa</h3>
+      <p>Nếu cần kiểm tra trước khi thay đổi header (ví dụ trong middleware xử lý lỗi), dùng thuộc tính <code>context.Response.HasStarted</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await next(context);
+
+    // Chỉ thêm header nếu response chưa bắt đầu gửi
+    if (!context.Response.HasStarted)
+    {
+        context.Response.Headers["X-Custom-Header"] = "value";
+    }
+});</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Lỗi <em>"Headers are read-only, response has already started"</em> là lỗi rất phổ biến trong middleware. Luôn nhớ quy tắc: <strong>set headers trước, write body sau</strong>. Khi middleware xử lý response trên đường về (sau <code>await next(context)</code>), headers đã bị flush nên chỉ có thể ghi thêm body hoặc dùng <code>HasStarted</code> để bảo vệ.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Các middleware có sẵn (Built-in)</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Built-in Middleware Components</em></p>
+
+      <p>ASP.NET Core đi kèm rất nhiều middleware có sẵn, được Microsoft xây dựng và kiểm tra kỹ lưỡng. Trong thực tế, bạn <em>hiếm khi</em> cần tự viết middleware từ đầu cho các tính năng phổ biến — hãy dùng built-in trước.</p>
+
+      <h3>Các built-in middleware quan trọng</h3>
+      <table class="tbl">
+        <tr><th>Extension method</th><th>Chức năng</th></tr>
+        <tr><td><code>app.UseExceptionHandler()</code></td><td>Bắt exception toàn cục, chuyển hướng sang trang lỗi hoặc endpoint xử lý lỗi.</td></tr>
+        <tr><td><code>app.UseHsts()</code></td><td>Thêm header <code>Strict-Transport-Security</code> cho HTTPS.</td></tr>
+        <tr><td><code>app.UseHttpsRedirection()</code></td><td>Chuyển hướng HTTP sang HTTPS tự động.</td></tr>
+        <tr><td><code>app.UseStaticFiles()</code></td><td>Phục vụ file tĩnh từ thư mục <code>wwwroot</code>.</td></tr>
+        <tr><td><code>app.UseRouting()</code></td><td>Kích hoạt routing — phân tích request path để khớp với endpoint.</td></tr>
+        <tr><td><code>app.UseAuthentication()</code></td><td>Xác thực người dùng (đọc cookie, JWT…).</td></tr>
+        <tr><td><code>app.UseAuthorization()</code></td><td>Kiểm tra quyền truy cập của người dùng đã xác thực.</td></tr>
+        <tr><td><code>app.UseCors()</code></td><td>Cấu hình Cross-Origin Resource Sharing.</td></tr>
+        <tr><td><code>app.UseSession()</code></td><td>Kích hoạt session.</td></tr>
+        <tr><td><code>app.UseResponseCaching()</code></td><td>Cache response ở phía server.</td></tr>
+        <tr><td><code>app.UseResponseCompression()</code></td><td>Nén response (gzip, brotli).</td></tr>
+        <tr><td><code>app.MapControllers()</code></td><td>Kích hoạt endpoint routing cho MVC/Web API controllers.</td></tr>
+        <tr><td><code>app.MapRazorPages()</code></td><td>Kích hoạt endpoint routing cho Razor Pages.</td></tr>
+      </table>
+
+      <h3>Thứ tự khuyến nghị cho ứng dụng MVC / Web API</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllersWithViews();
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Custom middleware của bạn đặt sau Authorization, trước endpoint
+// app.UseMiddleware&lt;MyCustomMiddleware&gt;();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span>Thứ tự middleware <em>rất quan trọng</em>. Ví dụ: <code>UseAuthentication</code> phải đứng <em>trước</em> <code>UseAuthorization</code>; <code>UseRouting</code> phải đứng <em>trước</em> <code>UseAuthorization</code> và <code>MapControllers</code>. Sai thứ tự sẽ gây lỗi logic khó phát hiện.</p>
+      </div>
+
+      <h3>Middleware là extension method</h3>
+      <p>Mỗi built-in middleware thực chất là một <strong>extension method</strong> trên <code>IApplicationBuilder</code>. Bạn có thể xem source code của chúng trên GitHub của ASP.NET Core. Đây cũng là cách bạn nên đóng gói custom middleware của mình — viết extension method để code gọi trở nên gọn gàng.</p>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Custom Middleware Class</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Custom Middleware Class</em></p>
+
+      <p>Khi pipeline có nhiều middleware inline trong <code>Program.cs</code>, file trở nên lộn xộn và khó bảo trì. Giải pháp là <strong>đưa implementation ra file riêng</strong> bằng cách tạo <em>custom middleware class</em>.</p>
+
+      <h3>Hai cách tạo middleware class</h3>
+      <table class="tbl">
+        <tr><th>Cách</th><th>Mô tả</th><th>Nhận ra qua</th></tr>
+        <tr>
+          <td><strong>Convention-based</strong></td>
+          <td>Class tự do, có constructor nhận <code>RequestDelegate</code> và method <code>InvokeAsync(HttpContext)</code>. ASP.NET Core nhận ra theo quy ước.</td>
+          <td>Constructor + <code>InvokeAsync</code></td>
+        </tr>
+        <tr>
+          <td><strong>Factory-based (<code>IMiddleware</code>)</strong></td>
+          <td>Class implement interface <code>IMiddleware</code>, được resolve từ DI container mỗi request. Cần đăng ký service trước.</td>
+          <td><code>: IMiddleware</code></td>
+        </tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Khóa học ưu tiên <strong>IMiddleware (factory-based)</strong> vì: intent rõ ràng (thấy interface là biết đây là middleware), buộc implement đúng method, tích hợp tốt với DI (có thể inject service vào constructor).</p>
+      </div>
+
+      <h3>Tạo IMiddleware class</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">MiddleComponents/MyCustomMiddleware.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.MiddleComponents;
+
+public class MyCustomMiddleware : IMiddleware
+{
+    // Có thể inject service qua constructor, ví dụ:
+    // private readonly ILogger&lt;MyCustomMiddleware&gt; _logger;
+    // public MyCustomMiddleware(ILogger&lt;MyCustomMiddleware&gt; logger) { _logger = logger; }
+
+    public async Task InvokeAsync(HttpContext context, RequestDelegate next)
+    {
+        await context.Response.WriteAsync("My custom middleware: Before calling next\r\n");
+
+        await next(context); // chuyển sang middleware tiếp theo
+
+        await context.Response.WriteAsync("My custom middleware: After calling next\r\n");
+    }
+}</code></pre>
+      </div>
+
+      <h3>Đăng ký service và sử dụng</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApp.MiddleComponents;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Bắt buộc: đăng ký middleware class vào DI container
+builder.Services.AddTransient&lt;MyCustomMiddleware&gt;();
+
+var app = builder.Build();
+
+// Middleware #1 (inline)
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #1: After calling next\r\n");
+});
+
+// Sử dụng custom middleware class
+app.UseMiddleware&lt;MyCustomMiddleware&gt;();
+
+// Middleware #2 (inline)
+app.Use(async (context, next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #2: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #2: After calling next\r\n");
+});
+
+// Middleware #3 (inline)
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #3: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #3: After calling next\r\n");
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Tạo extension method (khuyến nghị)</h3>
+      <p>Để code gọi trông gọn như built-in middleware, tạo một extension method:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">MiddleComponents/MyCustomMiddlewareExtensions.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.MiddleComponents;
+
+public static class MyCustomMiddlewareExtensions
+{
+    public static IApplicationBuilder UseMyCustomMiddleware(this IApplicationBuilder app)
+    {
+        return app.UseMiddleware&lt;MyCustomMiddleware&gt;();
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — dùng extension method</span><span class="lang">csharp</span></div>
+        <pre><code>// Thay vì app.UseMiddleware&lt;MyCustomMiddleware&gt;()
+app.UseMyCustomMiddleware();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Khi dùng <code>IMiddleware</code>, nên đăng ký với <code>AddTransient</code> (mỗi request tạo instance mới). Có thể dùng <code>AddScoped</code> nếu middleware cần access vào scoped service như <code>DbContext</code>. Không dùng <code>AddSingleton</code> trừ khi class thực sự không có state.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Bài tập 2 — Custom Exception Handling Middleware</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Assignment 2 — Custom exception handling middleware</em></p>
+
+      <p>Đây là bài tập thực hành để củng cố kiến thức chương 3. Nhiệm vụ: tự tạo một <strong>custom exception handling middleware</strong> bằng cách dùng middleware class (<code>IMiddleware</code>), không dùng inline delegate hay built-in <code>UseExceptionHandler</code>.</p>
+
+      <h3>Yêu cầu</h3>
+      <ol class="steps">
+        <li>Tạo một class implement <code>IMiddleware</code> đặt tên là <code>MyCustomExceptionHandler</code> (hoặc tên tương tự).</li>
+        <li>Đặt middleware này ở <strong>đầu tiên</strong> trong pipeline — vì sao? (gợi ý: xem bài 11 để hiểu tại sao).</li>
+        <li>Bắt tất cả exception từ các middleware phía sau bằng <code>try/catch</code>.</li>
+        <li>Khi có exception, trả về response HTML hiển thị thông tin lỗi.</li>
+        <li>Đăng ký middleware class vào DI container.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Hãy tự làm trước khi xem đáp án ở bài 11. Câu hỏi chính cần trả lời: tại sao exception handling middleware phải đứng <em>đầu tiên</em>?</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 11 ============ -->
+    <section class="section" id="s11">
+      <h2><span class="num">11</span> Bài tập 2 (đáp án) — Custom Exception Handling Middleware</h2>
+      <p class="subvideo-meta">Bài 11 · <em>Assignment 2 (answer) — Custom exception handling middleware</em></p>
+
+      <p>Vì middleware pipeline là một chuỗi lồng nhau, middleware đầu tiên là <em>hàm bao ngoài cùng</em> — nó gọi tất cả các middleware phía sau như một call stack. Nếu đặt <code>try/catch</code> ở middleware đầu tiên, khối catch sẽ bắt được mọi exception ném ra từ bất kỳ middleware nào trong toàn bộ pipeline.</p>
+
+      <h3>Giải thích logic</h3>
+      <div class="callout key">
+        <p><span class="ico">🔑</span>Exception handling middleware phải đứng <strong>đầu pipeline</strong> vì nó bao quanh toàn bộ chuỗi gọi. Nếu đặt ở giữa hoặc cuối, nó chỉ bắt được exception của các middleware <em>phía sau</em> nó, còn exception từ middleware phía trước sẽ không bị bắt.</p>
+      </div>
+
+      <h3>Triển khai</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">MiddleComponents/MyCustomExceptionHandler.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApp.MiddleComponents;
+
+public class MyCustomExceptionHandler : IMiddleware
+{
+    public async Task InvokeAsync(HttpContext context, RequestDelegate next)
+    {
+        try
+        {
+            context.Response.ContentType = "text/html";
+            await next(context); // gọi toàn bộ phần còn lại của pipeline
+        }
+        catch (Exception ex)
+        {
+            // Bắt exception từ bất kỳ middleware nào phía sau
+            await context.Response.WriteAsync("&lt;h2&gt;Error:&lt;/h2&gt;");
+            await context.Response.WriteAsync($"&lt;p&gt;{ex.Message}&lt;/p&gt;");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApp.MiddleComponents;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký cả hai middleware vào DI
+builder.Services.AddTransient&lt;MyCustomMiddleware&gt;();
+builder.Services.AddTransient&lt;MyCustomExceptionHandler&gt;();
+
+var app = builder.Build();
+
+// Exception handler PHẢI đứng ĐẦU TIÊN
+app.UseMiddleware&lt;MyCustomExceptionHandler&gt;();
+
+// Middleware #1
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #1: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #1: After calling next\r\n");
+});
+
+app.UseMiddleware&lt;MyCustomMiddleware&gt;();
+
+// Middleware #2 — ném exception để test
+app.Use(async (context, next) =&gt;
+{
+    throw new ApplicationException("Exception for testing.");
+
+    // Dòng dưới đây sẽ không chạy
+    await context.Response.WriteAsync("Middleware #2: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #2: After calling next\r\n");
+});
+
+// Middleware #3
+app.Use(async (HttpContext context, RequestDelegate next) =&gt;
+{
+    await context.Response.WriteAsync("Middleware #3: Before calling next\r\n");
+    await next(context);
+    await context.Response.WriteAsync("Middleware #3: After calling next\r\n");
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Kết quả khi có exception</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Response (text/html)</span><span class="lang">html</span></div>
+        <pre><code>Middleware #1: Before calling next
+My custom middleware: Before calling next
+&lt;h2&gt;Error:&lt;/h2&gt;
+&lt;p&gt;Exception for testing.&lt;/p&gt;</code></pre>
+      </div>
+
+      <p>Nhận xét: Middleware #1 và MyCustomMiddleware đã chạy phần "Before" trước khi exception xảy ra. Khi exception được ném từ Middleware #2, nó bị bắt bởi <code>MyCustomExceptionHandler</code> (đứng đầu pipeline), không truyền lên tầng trên thành 500 Internal Server Error.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Trong thực tế production, ASP.NET Core cung cấp <code>app.UseExceptionHandler()</code> với nhiều tính năng hơn (logging tự động, problem details, redirect…). Custom exception middleware như trên rất hữu ích để học cơ chế hoạt động hoặc khi cần hành vi tùy chỉnh đặc biệt.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-02.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">02 · HTTP Protocol &amp; HTTP Context</div>
+      </a>
+      <a class="next" href="lesson-04.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">04 · Minimal API — Routing</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

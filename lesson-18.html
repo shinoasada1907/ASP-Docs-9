@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 18 — Minimal API · Filter Pipeline | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 18 — Minimal API · Filter Pipeline</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Filter Pipeline là gì và tại sao dùng</a></li>
+      <li><a href="#s2">2. Tạo và gắn filter vào endpoint</a></li>
+      <li><a href="#s3">3. Thứ tự thực thi, Model Binding &amp; Validation</a></li>
+      <li><a href="#s4">4. Nhiều filter tạo thành pipeline</a></li>
+      <li><a href="#s5">5. Bài tập 10 — Tách validation vào filter</a></li>
+      <li><a href="#s6">6. Bài tập 10 — Đáp án chi tiết</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 18</span>
+      <h1>Minimal API — Filter Pipeline</h1>
+      <p class="lead">Endpoint filter trong Minimal API — tạo, gắn, chuỗi nhiều filter, tách logic validation ra khỏi handler để code sạch hơn.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Filter Pipeline là gì và tại sao dùng</h2>
+      <p class="subvideo-meta">Bài 1 · <em>What is and Why use Filter Pipeline</em></p>
+
+      <p>Để hiểu filter pipeline, hãy ôn lại cách ASP.NET Core xử lý một HTTP request. Một request đi qua chuỗi <strong>middleware</strong> — mỗi middleware xử lý request rồi chuyển tiếp cho middleware kế tiếp, và response sẽ đi ngược lại theo chiều đó.</p>
+
+      <p>Trong chuỗi middleware đó, hai thành phần thiết yếu nhất là:</p>
+      <ul>
+        <li><strong>Routing middleware</strong> — phân tích URL và chọn endpoint phù hợp.</li>
+        <li><strong>Endpoint middleware</strong> — thực thi handler của endpoint đã chọn.</li>
+      </ul>
+
+      <h3>Filter pipeline nằm ở đâu?</h3>
+      <p>Filter pipeline nằm <strong>bên trong</strong> endpoint middleware. Khi routing đã chọn được endpoint (ví dụ <code>MapPut("/employees/{id}")</code>), thay vì gọi thẳng handler, ASP.NET Core sẽ chạy qua một chuỗi các <strong>endpoint filter</strong> trước, rồi mới gọi handler thật sự ở cuối cùng.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Filter pipeline giống như một "middleware pipeline thu nhỏ" gắn riêng cho từng endpoint, thay vì áp dụng toàn cục cho mọi request.</p>
+      </div>
+
+      <h3>Mô hình hoạt động</h3>
+      <p>Mỗi filter nhận hai tham số:</p>
+      <ul>
+        <li><code>EndpointFilterInvocationContext context</code> — chứa các argument đã được model-bind từ request (tham số của handler).</li>
+        <li><code>EndpointFilterDelegate next</code> — delegate để gọi filter tiếp theo (hoặc handler nếu không còn filter nào).</li>
+      </ul>
+
+      <p>Một filter có thể:</p>
+      <ol class="steps">
+        <li>Kiểm tra/thay đổi dữ liệu đầu vào <em>trước</em> khi gọi <code>next(context)</code>.</li>
+        <li>Gọi <code>await next(context)</code> để chuyển quyền cho filter tiếp theo / handler.</li>
+        <li>Kiểm tra/thay đổi kết quả trả về <em>sau</em> khi <code>next</code> hoàn thành.</li>
+        <li><strong>Short-circuit</strong> — trả về response ngay mà không gọi <code>next</code>, ví dụ khi validation thất bại.</li>
+      </ol>
+
+      <h3>Tại sao dùng filter pipeline?</h3>
+      <table class="tbl">
+        <tr><th>Mục đích</th><th>Ví dụ</th></tr>
+        <tr><td>Tách logic validation ra khỏi handler</td><td>Kiểm tra id hợp lệ, employee tồn tại...</td></tr>
+        <tr><td>Logging / tracing cho từng endpoint</td><td>Ghi log trước &amp; sau khi handler chạy</td></tr>
+        <tr><td>Xác thực nghiệp vụ (business rules)</td><td>Kiểm tra quyền, trạng thái đối tượng...</td></tr>
+        <tr><td>Tái sử dụng logic xuyên suốt nhiều endpoint</td><td>Filter <code>EnsureEmployeeExists</code> dùng cho GET/PUT/DELETE</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Lợi ích chính:</strong> handler chỉ chứa logic nghiệp vụ thuần tuý; mọi cross-cutting concern (validation, logging...) được chuyển vào filter — code dễ đọc, dễ test và tái sử dụng.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Tạo và gắn filter vào endpoint</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Create and Attach a filter</em></p>
+
+      <p>Chúng ta sẽ tạo một filter kiểm tra rằng <code>id</code> trong URL path khớp với <code>id</code> trong body JSON khi gọi endpoint cập nhật employee (<code>PUT /employees/{id}</code>).</p>
+
+      <h3>Bước 1 — Tạo class filter</h3>
+      <p>Filter phải implement interface <code>IEndpointFilter</code> và override phương thức <code>InvokeAsync</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EmployeeUpdateFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Models;
+
+namespace WebApi.Filters
+{
+    public class EmployeeUpdateFilter : IEndpointFilter
+    {
+        public async ValueTask&lt;object?&gt; InvokeAsync(
+            EndpointFilterInvocationContext context,
+            EndpointFilterDelegate next)
+        {
+            // Lấy argument theo vị trí tham số của handler
+            var id       = context.GetArgument&lt;int&gt;(0);      // {id} từ route
+            var employee = context.GetArgument&lt;Employee&gt;(1); // body JSON
+
+            if (id != employee.Id)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary&lt;string, string[]&gt;
+                    {
+                        { "id", new[] { "Employee id is not the same as id." } }
+                    },
+                    statusCode: 400);
+            }
+
+            // Validation qua, gọi filter/handler tiếp theo
+            return await next(context);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><code>context.GetArgument&lt;T&gt;(index)</code> lấy argument theo vị trí tương ứng với tham số của handler. Index bắt đầu từ 0, không tính các service được inject (DI parameters).</p>
+      </div>
+
+      <h3>Bước 2 — Gắn filter vào endpoint bằng <code>AddEndpointFilter&lt;T&gt;()</code></h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Filters;
+using WebApi.Models;
+
+namespace WebApi.Endpoints
+{
+    public static class EmployeeEndpoints
+    {
+        public static void MapEmployeeEndpoints(this WebApplication app)
+        {
+            // ... các endpoint khác ...
+
+            app.MapPut("/employees/{id:int}",
+                (int id, Employee employee, IEmployeesRepository repo) =&gt;
+                {
+                    return repo.UpdateEmployee(employee)
+                        ? TypedResults.NoContent()
+                        : Results.ValidationProblem(
+                            new Dictionary&lt;string, string[]&gt;
+                            {
+                                { "id", new[] { "Employee doesn't exist." } }
+                            },
+                            statusCode: 404);
+                })
+                .AddEndpointFilter&lt;EmployeeUpdateFilter&gt;(); // &lt;-- gắn filter
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Khi nào filter được gọi?</h3>
+      <ol class="steps">
+        <li>Client gửi <code>PUT /employees/3</code> với body <code>{"id": 5, ...}</code>.</li>
+        <li>Routing chọn endpoint <code>MapPut</code>.</li>
+        <li>Model binding điền <code>id = 3</code>, <code>employee.Id = 5</code> vào các tham số.</li>
+        <li><code>EmployeeUpdateFilter.InvokeAsync</code> được gọi: phát hiện <code>3 != 5</code>, trả về 400 ngay.</li>
+        <li>Handler không được thực thi.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Ngoài cách dùng class (<code>AddEndpointFilter&lt;T&gt;()</code>), có thể viết filter inline bằng lambda: <code>.AddEndpointFilter(async (ctx, next) =&gt; { ... return await next(ctx); })</code>. Dùng class khi filter phức tạp hoặc cần tái sử dụng; dùng lambda cho logic đơn giản, tạm thời.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Thứ tự thực thi, Model Binding &amp; Validation</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Filter execution, Model Binding and Model Validation</em></p>
+
+      <p>Một câu hỏi quan trọng: filter chạy <em>trước hay sau</em> model binding và model validation?</p>
+
+      <h3>Model Binding — luôn chạy trước filter</h3>
+      <p>Vì bên trong <code>InvokeAsync</code> chúng ta có thể gọi <code>context.GetArgument&lt;Employee&gt;(1)</code> và nhận được đối tượng <code>Employee</code> đã được điền đầy đủ từ JSON body, điều đó chứng tỏ <strong>model binding đã hoàn thành trước khi bất kỳ filter nào chạy</strong>.</p>
+
+      <h3>Model Validation — phụ thuộc vào thứ tự chuỗi</h3>
+      <p>Trong Minimal API, model validation được thêm vào qua <code>.WithParameterValidation()</code> — về bản chất đây cũng là một endpoint filter. Thứ tự thực thi hoàn toàn phụ thuộc vào vị trí trong chuỗi <code>.Add...</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Trường hợp A: filter của chúng ta chạy TRƯỚC validation
+app.MapPut("/employees/{id:int}", handler)
+    .AddEndpointFilter&lt;EmployeeUpdateFilter&gt;()  // 1. chạy trước
+    .WithParameterValidation();                  // 2. chạy sau
+
+// Trường hợp B: validation chạy TRƯỚC filter của chúng ta
+app.MapPut("/employees/{id:int}", handler)
+    .WithParameterValidation()                   // 1. chạy trước (short-circuit nếu invalid)
+    .AddEndpointFilter&lt;EmployeeUpdateFilter&gt;(); // 2. chỉ chạy nếu validation qua</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Lưu ý quan trọng:</strong> Thứ tự gọi <code>AddEndpointFilter</code> và <code>WithParameterValidation</code> quyết định thứ tự thực thi. Nếu validation nằm trước, một request invalid sẽ bị short-circuit ngay mà filter của bạn không bao giờ được gọi. Thiết kế cẩn thận để tránh bỏ sót kiểm tra.</p>
+      </div>
+
+      <h3>Tóm tắt thứ tự</h3>
+      <table class="tbl">
+        <tr><th>Bước</th><th>Thành phần</th><th>Ghi chú</th></tr>
+        <tr><td>1</td><td>Model Binding</td><td>Luôn xảy ra đầu tiên, trước mọi filter</td></tr>
+        <tr><td>2</td><td>Filter / Validation (theo thứ tự <code>Add...</code>)</td><td>Thứ tự do lập trình viên quyết định</td></tr>
+        <tr><td>3</td><td>Endpoint handler</td><td>Chỉ chạy nếu không có filter nào short-circuit</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Thực hành tốt: đặt <code>.WithParameterValidation()</code> <strong>trước</strong> các filter nghiệp vụ. Data annotation validation (như <code>[Required]</code>) nên chạy sớm để loại bỏ request rõ ràng sai ngay từ đầu.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Nhiều filter tạo thành pipeline</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Add multiple filters to form a filter pipeline</em></p>
+
+      <p>Bạn có thể gắn nhiều filter vào cùng một endpoint bằng cách gọi <code>AddEndpointFilter</code> nhiều lần. Các filter hình thành một pipeline — giống như middleware pipeline nhưng ở phạm vi endpoint.</p>
+
+      <h3>Thứ tự thực thi — mô hình "Russian Doll"</h3>
+      <p>Giả sử bạn gắn ba filter A, B, C (theo thứ tự này). Thứ tự thực thi sẽ là:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Thứ tự thực thi</span><span class="lang">text</span></div>
+        <pre><code>→ Before A
+  → Before B
+    → Before C
+      → Handler chạy
+    ← After C
+  ← After B
+← After A</code></pre>
+      </div>
+
+      <p>Filter được đăng ký trước (A) bao bọc bên ngoài, filter đăng ký sau (C) gần handler nhất — giống hệt cơ chế middleware.</p>
+
+      <h3>Demo: gắn ba filter inline để quan sát pipeline</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/employees", (IEmployeesRepository repo) =&gt;
+{
+    Console.WriteLine("Execution of the endpoint handler.");
+    return TypedResults.Ok(repo.GetEmployees());
+})
+.AddEndpointFilter(async (context, next) =&gt;
+{
+    Console.WriteLine("Before filter A");
+    var result = await next(context);
+    Console.WriteLine("After filter A");
+    return result;
+})
+.AddEndpointFilter(async (context, next) =&gt;
+{
+    Console.WriteLine("Before filter B");
+    var result = await next(context);
+    Console.WriteLine("After filter B");
+    return result;
+})
+.AddEndpointFilter(async (context, next) =&gt;
+{
+    Console.WriteLine("Before filter C");
+    var result = await next(context);
+    Console.WriteLine("After filter C");
+    return result;
+});</code></pre>
+      </div>
+
+      <p>Kết quả trên console khi gọi <code>GET /employees</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Console output</span><span class="lang">text</span></div>
+        <pre><code>Before filter A
+Before filter B
+Before filter C
+Execution of the endpoint handler.
+After filter C
+After filter B
+After filter A</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span>Filter đăng ký <strong>trước</strong> bao bọc filter đăng ký <strong>sau</strong>. Đây là nguyên tắc LIFO (Last In, First Out) khi "tháo lớp" response — cùng pattern với middleware pipeline.</p>
+      </div>
+
+      <h3>Short-circuit trong pipeline nhiều filter</h3>
+      <p>Nếu một filter không gọi <code>await next(context)</code> mà trả về kết quả ngay, toàn bộ phần còn lại của pipeline (các filter sau và handler) sẽ <strong>không được thực thi</strong>. Chỉ phần "After" của các filter bên ngoài (đã chạy trước nó) mới được thực thi khi response đi ngược về.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Short-circuit ở filter B</span><span class="lang">csharp</span></div>
+        <pre><code>.AddEndpointFilter(async (context, next) =&gt;
+{
+    Console.WriteLine("Before filter B");
+    // Short-circuit: trả về lỗi ngay, không gọi next
+    return Results.BadRequest("Filter B rejected the request.");
+    // Filter C và handler sẽ không chạy
+    // After A vẫn chạy khi response đi qua filter A
+})</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Bài tập 10 — Tách validation vào filter</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Assignment 10 — Create filters to extract all validation logics</em></p>
+
+      <p>Ở các bài trước, logic validation (kiểm tra employee tồn tại, kiểm tra id khớp...) được viết trực tiếp bên trong handler. Điều này làm handler dài và khó tái sử dụng. Bài tập này yêu cầu bạn <strong>tách toàn bộ validation</strong> ra thành các filter riêng.</p>
+
+      <h3>Hiện trạng — validation lẫn lộn trong handler</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">EmployeeEndpoints.cs (trước khi refactor)</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapGet("/employees/{id:int}", (int id, IEmployeesRepository repo) =&gt;
+{
+    var employee = repo.GetEmployeeById(id);
+    // Validation lẫn với logic nghiệp vụ
+    return employee is not null
+        ? TypedResults.Ok(employee)
+        : Results.ValidationProblem(
+            new Dictionary&lt;string, string[]&gt;
+            {
+                { "id", new[] { $"Employee with the id {id} doesn't exist." } }
+            },
+            statusCode: 404);
+});
+
+app.MapPut("/employees/{id:int}", (int id, Employee employee, IEmployeesRepository repo) =&gt;
+{
+    // Validation 1: employee tồn tại không?
+    // Validation 2: id path == id body?
+    return repo.UpdateEmployee(employee)
+        ? TypedResults.NoContent()
+        : Results.ValidationProblem(
+            new Dictionary&lt;string, string[]&gt;
+            {
+                { "id", new[] { "Employee doesn't exist." } }
+            },
+            statusCode: 404);
+}).AddEndpointFilter&lt;EmployeeUpdateFilter&gt;();</code></pre>
+      </div>
+
+      <h3>Yêu cầu bài tập</h3>
+      <ol class="steps">
+        <li>Tạo filter <code>EnsureEmployeeExistsFilter</code> — kiểm tra employee với id trong route có tồn tại không. Dùng lại cho <code>GET /employees/{id}</code>, <code>PUT /employees/{id}</code> và <code>DELETE /employees/{id}</code>.</li>
+        <li>Tạo filter <code>EmployeeCreateFilter</code> — kiểm tra employee body hợp lệ khi <code>POST /employees</code>.</li>
+        <li>Giữ nguyên <code>EmployeeUpdateFilter</code> — kiểm tra id path == id body.</li>
+        <li>Thêm phương thức <code>EmployeeExists(int id)</code> vào <code>IEmployeesRepository</code> để filter dùng mà không phải gọi <code>GetEmployeeById</code> hai lần.</li>
+        <li>Handler sau refactor chỉ chứa logic nghiệp vụ thuần tuý — không có validation.</li>
+      </ol>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Cân nhắc readability:</strong> khi validation được tách hết vào filter, handler trông rất "sạch", nhưng người đọc code sau này có thể không biết endpoint áp dụng những validation nào. Hãy đặt tên filter rõ ràng và cân nhắc thêm comment tóm tắt.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Bài tập 10 — Đáp án chi tiết</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Assignment 10 (Answer) — Create filters to extract all validation logics</em></p>
+
+      <p>Dưới đây là đáp án hoàn chỉnh, trích thẳng từ source code của giảng viên.</p>
+
+      <h3>Bước 1 — Cập nhật interface &amp; repository</h3>
+      <p>Thêm phương thức <code>EmployeeExists</code> vào interface để filter có thể kiểm tra sự tồn tại mà không cần lấy toàn bộ đối tượng.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/IEmployeesRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApi.Models
+{
+    public interface IEmployeesRepository
+    {
+        void AddEmployee(Employee? employee);
+        bool DeleteEmployee(Employee? employee);
+        bool EmployeeExists(int id);          // &lt;-- thêm mới
+        Employee? GetEmployeeById(int id);
+        List&lt;Employee&gt; GetEmployees();
+        bool UpdateEmployee(Employee? employee);
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 2 — Filter kiểm tra employee tồn tại</h3>
+      <p>Filter này nhận <code>IEmployeesRepository</code> qua constructor injection — DI container tự động cung cấp khi filter được resolve.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EnsureEmployeeExistsFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Models;
+
+namespace WebApi.Filters
+{
+    public class EnsureEmployeeExistsFilter : IEndpointFilter
+    {
+        private readonly IEmployeesRepository _repository;
+
+        public EnsureEmployeeExistsFilter(IEmployeesRepository repository)
+        {
+            _repository = repository;
+        }
+
+        public async ValueTask&lt;object?&gt; InvokeAsync(
+            EndpointFilterInvocationContext context,
+            EndpointFilterDelegate next)
+        {
+            var id = context.GetArgument&lt;int&gt;(0);
+
+            if (!_repository.EmployeeExists(id))
+            {
+                return Results.ValidationProblem(
+                    new Dictionary&lt;string, string[]&gt;
+                    {
+                        { "id", new[] { $"Employee with the id {id} doesn't exist." } }
+                    },
+                    statusCode: 404);
+            }
+
+            return await next(context);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 3 — Filter kiểm tra dữ liệu tạo mới</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EmployeeCreateFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Models;
+
+namespace WebApi.Filters
+{
+    public class EmployeeCreateFilter : IEndpointFilter
+    {
+        public async ValueTask&lt;object?&gt; InvokeAsync(
+            EndpointFilterInvocationContext context,
+            EndpointFilterDelegate next)
+        {
+            var employee = context.GetArgument&lt;Employee&gt;(0);
+
+            if (employee is null || employee.Id &lt; 0)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary&lt;string, string[]&gt;
+                    {
+                        { "id", new[] { "Employee is not provided or is not valid." } }
+                    },
+                    statusCode: 400);
+            }
+
+            return await next(context);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Bước 4 — Endpoints sau khi refactor</h3>
+      <p>Handler giờ chỉ chứa logic nghiệp vụ thuần tuý. Validation hoàn toàn được quản lý bởi các filter.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Endpoints/EmployeeEndpoints.cs (sau refactor)</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Filters;
+using WebApi.Models;
+
+namespace WebApi.Endpoints
+{
+    public static class EmployeeEndpoints
+    {
+        public static void MapEmployeeEndpoints(this WebApplication app)
+        {
+            app.MapGet("/employees", (IEmployeesRepository repo) =&gt;
+                TypedResults.Ok(repo.GetEmployees()));
+
+            // Filter đảm bảo employee tồn tại trước khi handler chạy
+            app.MapGet("/employees/{id:int}", (int id, IEmployeesRepository repo) =&gt;
+                TypedResults.Ok(repo.GetEmployeeById(id)))
+                .AddEndpointFilter&lt;EnsureEmployeeExistsFilter&gt;();
+
+            // Validation data annotation + filter kiểm tra nghiệp vụ
+            app.MapPost("/employees", (Employee employee, IEmployeesRepository repo) =&gt;
+            {
+                repo.AddEmployee(employee);
+                return TypedResults.Created($"/employees/{employee.Id}", employee);
+            })
+            .WithParameterValidation()
+            .AddEndpointFilter&lt;EmployeeCreateFilter&gt;();
+
+            // Pipeline: validation =&gt; tồn tại? =&gt; id khớp? =&gt; handler
+            app.MapPut("/employees/{id:int}",
+                (int id, Employee employee, IEmployeesRepository repo) =&gt;
+                {
+                    repo.UpdateEmployee(employee);
+                    return TypedResults.NoContent();
+                })
+                .WithParameterValidation()
+                .AddEndpointFilter&lt;EnsureEmployeeExistsFilter&gt;()
+                .AddEndpointFilter&lt;EmployeeUpdateFilter&gt;();
+
+            app.MapDelete("/employees/{id:int}",
+                (int id, IEmployeesRepository repo) =&gt;
+                {
+                    var employee = repo.GetEmployeeById(id);
+                    repo.DeleteEmployee(employee);
+                    return TypedResults.Ok(employee);
+                })
+                .AddEndpointFilter&lt;EnsureEmployeeExistsFilter&gt;();
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>So sánh trước và sau refactor</h3>
+      <table class="tbl">
+        <tr><th>Endpoint</th><th>Filter pipeline</th><th>Handler làm gì</th></tr>
+        <tr>
+          <td><code>GET /employees/{id}</code></td>
+          <td><span class="tag">EnsureEmployeeExists</span></td>
+          <td>Trả về employee</td>
+        </tr>
+        <tr>
+          <td><code>POST /employees</code></td>
+          <td><span class="tag">ParameterValidation</span> → <span class="tag">EmployeeCreate</span></td>
+          <td>Thêm employee, trả 201</td>
+        </tr>
+        <tr>
+          <td><code>PUT /employees/{id}</code></td>
+          <td><span class="tag">ParameterValidation</span> → <span class="tag">EnsureEmployeeExists</span> → <span class="tag">EmployeeUpdate</span></td>
+          <td>Cập nhật employee, trả 204</td>
+        </tr>
+        <tr>
+          <td><code>DELETE /employees/{id}</code></td>
+          <td><span class="tag">EnsureEmployeeExists</span></td>
+          <td>Xoá employee, trả 200</td>
+        </tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>DI trong filter:</strong> khi dùng <code>AddEndpointFilter&lt;EnsureEmployeeExistsFilter&gt;()</code> (generic version), ASP.NET Core tự động resolve filter từ DI container, bao gồm cả các dependency trong constructor (<code>IEmployeesRepository</code>). Bạn không cần đăng ký filter vào DI thủ công.</p>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Kết quả cuối cùng:</strong> mỗi handler chỉ còn 2-3 dòng logic thuần tuý. Toàn bộ validation logic được tập trung, có thể test độc lập, và tái sử dụng xuyên suốt nhiều endpoint — đây là kiến trúc clean và maintainable cho Minimal API trong .NET 9.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-17.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">17 · MVC &amp; Razor Pages — Dependency Injection</div>
+      </a>
+      <a class="next" href="lesson-19.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">19 · MVC &amp; Razor Pages — Filter Pipeline</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

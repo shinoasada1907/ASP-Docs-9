@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 09 — MVC Controllers: Model Binding &amp; Validation | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 09 — MVC Controllers: Model Binding &amp; Validation</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Binding vào Form Fields</a></li>
+      <li><a href="#s2">2. Binding Complex Types</a></li>
+      <li><a href="#s3">3. Binding Source Priorities</a></li>
+      <li><a href="#s4">4. Missing Binding Source</a></li>
+      <li><a href="#s5">5. Input Formatter</a></li>
+      <li><a href="#s6">6. ModelState &amp; Validation</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 09</span>
+      <h1>MVC Controllers — Model Binding &amp; Validation</h1>
+      <p class="lead">Tìm hiểu cách ASP.NET Core MVC tự động ánh xạ dữ liệu từ HTTP request (form fields, query string, route, body) vào tham số action method, thứ tự ưu tiên các nguồn binding, cách xử lý khi nguồn dữ liệu bị thiếu, cách thêm Input Formatter XML, và cách dùng ModelState để kiểm tra tính hợp lệ của dữ liệu trong controller.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Binding vào Form Fields</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Binding to form fields</em></p>
+
+      <p>Hầu hết những gì đã học về <strong>model binding trong Minimal API</strong> vẫn áp dụng được trong MVC Controllers.
+        Điểm khác biệt quan trọng nhất là controller <strong>có thể nhận dữ liệu từ form fields</strong> — điều mà Minimal API
+        không hỗ trợ (vì form fields chỉ xuất hiện trong ứng dụng có giao diện người dùng, không phải API thuần).</p>
+
+      <h3>Binding thông thường — route &amp; query string</h3>
+      <p>Với tham số kiểu nguyên thủy (ví dụ <code>int id</code>), ASP.NET Core MVC hoạt động giống hệt Minimal API:
+        framework tự tìm giá trị trong route parameter hoặc query string và ánh xạ vào tham số action method.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+
+public class DepartmentsController : Controller
+{
+    // GET /departments/details/5   → id = 5  (route)
+    // GET /departments/details?id=5 → id = 5  (query string)
+    public string Details(int? id)
+    {
+        return $"Department info: {id}";
+    }
+}</code></pre>
+      </div>
+
+      <h3>Binding từ form fields (x-www-form-urlencoded)</h3>
+      <p>Khi client gửi một POST request với <strong>Content-Type: application/x-www-form-urlencoded</strong>
+        (hoặc <code>multipart/form-data</code>), ASP.NET Core MVC tự động đọc các field trong body và
+        ánh xạ chúng vào tham số có tên khớp. Không cần thêm attribute nào.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpPost]
+public string Create(string name, string description)
+{
+    // name và description được binding tự động từ form fields
+    return $"Đã tạo: {name} — {description}";
+}</code></pre>
+      </div>
+
+      <p>Ví dụ request gửi từ Postman hoặc một HTML form:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Request (form)</span><span class="lang">http</span></div>
+        <pre><code>POST /departments/create HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+name=Software&amp;description=Best+department</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Nếu action method không được đánh dấu <code>[HttpPost]</code>/<code>[HttpGet]</code>…
+          thì mặc định nó chấp nhận <strong>mọi HTTP method</strong>. Trong demo và kiểm thử với Postman,
+          đây là điều thuận tiện để thử cả GET lẫn POST mà không cần thay đổi controller.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Binding Complex Types</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Complex types</em></p>
+
+      <p>Trong Minimal API, để nhận một object phức tạp (complex type) từ HTTP request body, bắt buộc phải dùng
+        <code>[FromBody]</code>. Tuy nhiên, trong <strong>MVC Controllers</strong>, tình huống linh hoạt hơn:
+        nếu không có attribute nào được chỉ định, framework sẽ tự động tìm giá trị trong
+        <strong>form fields hoặc query string</strong> để điền vào từng property của object.</p>
+
+      <h3>Model Department</h3>
+      <p>Đây là class model lấy trực tiếp từ project trong zip:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Department.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+namespace WebApp.Models
+{
+    public class Department
+    {
+        public int Id { get; set; }
+
+        [Required]
+        public string? Name { get; set; }
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Controller nhận complex type không cần attribute</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+public class DepartmentsController : Controller
+{
+    // Không có [FromBody], [FromForm] — framework tự binding từ form/query
+    [HttpPost]
+    public object Create(Department department)
+    {
+        return department; // tự động serialize thành JSON
+    }
+}</code></pre>
+      </div>
+
+      <p>Gửi request dạng <strong>form-data</strong> từ Postman:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Postman — Body: form-data</span><span class="lang">text</span></div>
+        <pre><code>Id          = 1
+Name        = Software Development
+Description = Best department ever</code></pre>
+      </div>
+
+      <p>Hoặc dùng <strong>query string</strong>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Request</span><span class="lang">http</span></div>
+        <pre><code>POST /departments/create?Id=1&amp;Name=Software&amp;Description=Good+dept HTTP/1.1</code></pre>
+      </div>
+
+      <p>Cả hai cách đều trả về object Department đã được điền đầy đủ và serialize thành JSON:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Response JSON</span><span class="lang">json</span></div>
+        <pre><code>{
+  "id": 1,
+  "name": "Software Development",
+  "description": "Best department ever"
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span><strong>Khác biệt then chốt so với Minimal API:</strong> Trong Minimal API,
+          complex type mặc định đến từ body (phải là JSON). Trong MVC Controller, complex type mặc định đến từ
+          <strong>form fields hoặc query string</strong>. Muốn đọc từ body JSON phải dùng <code>[FromBody]</code> tường minh.</p>
+      </div>
+
+      <h3>Program.cs — đăng ký MVC với routing</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+app.UseRouting();
+
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}"
+    );
+});
+
+app.Run();</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Binding Source Priorities</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Binding source priorities</em></p>
+
+      <p>Khi một tham số action method có thể đến từ nhiều nguồn cùng lúc (ví dụ cả form lẫn route đều có <code>id</code>),
+        ASP.NET Core MVC áp dụng <strong>thứ tự ưu tiên (priority)</strong> để quyết định lấy từ đâu.
+        Thứ tự này khác đôi chút so với Minimal API.</p>
+
+      <h3>Thứ tự ưu tiên trong MVC Controllers</h3>
+      <table class="tbl">
+        <tr><th>Ưu tiên</th><th>Nguồn binding</th><th>Ghi chú</th></tr>
+        <tr>
+          <td>1</td>
+          <td><strong>Explicit binding attribute</strong></td>
+          <td><code>[FromQuery]</code>, <code>[FromRoute]</code>, <code>[FromForm]</code>, <code>[FromBody]</code>, <code>[FromHeader]</code> — luôn được ưu tiên tuyệt đối.</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><strong>Binding async (custom model binder)</strong></td>
+          <td>Custom <code>IModelBinder</code> đăng ký trong DI.</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><strong>Form fields &amp; query string</strong> (primitive hoặc complex type)</td>
+          <td>Cao hơn route — đây là điểm khác biệt chính so với Minimal API.</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><strong>Route parameters</strong> (primitive type)</td>
+          <td>Ví dụ <code>{id}</code> trong URL template.</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td><strong>Query string</strong> (complex type)</td>
+          <td>Ánh xạ từng property của complex type qua query string.</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td><strong>Headers</strong></td>
+          <td>Ít dùng, cần attribute <code>[FromHeader]</code> tường minh.</td>
+        </tr>
+      </table>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Lưu ý quan trọng:</strong> Binding từ <strong>body</strong> (JSON/XML)
+          <em>không có trong danh sách mặc định</em> của MVC Controllers — muốn đọc body phải dùng
+          <code>[FromBody]</code> tường minh (thuộc nhóm ưu tiên 1 — explicit).</p>
+      </div>
+
+      <h3>Ví dụ minh họa thứ tự ưu tiên</h3>
+      <p>Kịch bản: cùng tên <code>id</code> xuất hiện ở cả form field và route parameter — xem form field thắng:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpPost]
+[Route("departments/details/{id}")]
+public string Details(int? id)
+{
+    return $"Department info: {id}";
+}
+</code></pre>
+      </div>
+
+      <p>Gửi POST request với route <code>/departments/details/100</code> đồng thời có form field <code>id=900</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Request</span><span class="lang">http</span></div>
+        <pre><code>POST /departments/details/100 HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+id=900</code></pre>
+      </div>
+
+      <p>Kết quả: <code>Department info: 900</code> — form field (ưu tiên 3) thắng route parameter (ưu tiên 4).</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Để tránh nhầm lẫn, hãy luôn dùng attribute tường minh khi cần binding từ một nguồn cụ thể:
+          <code>[FromRoute]</code>, <code>[FromForm]</code>, <code>[FromQuery]</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Missing Binding Source</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Missing binding source</em></p>
+
+      <p>Điều gì xảy ra khi action method có tham số nhưng HTTP request không cung cấp dữ liệu tương ứng?
+        Hành vi này trong MVC Controllers <strong>khác với Minimal API</strong> và cần hiểu rõ để tránh bug tiềm ẩn.</p>
+
+      <h3>Trường hợp 1 — Complex type không có dữ liệu</h3>
+      <p>Khi không có bất kỳ dữ liệu nào trong request khớp với complex type, MVC Controller sẽ
+        <strong>tạo một instance mới với toàn bộ property ở giá trị mặc định</strong> — không ném lỗi, không trả về 400.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpPost]
+public object Create(Department department)
+{
+    // Nếu request không có dữ liệu:
+    // department.Id   = 0   (default int)
+    // department.Name = null
+    // department.Description = null
+    // Không có lỗi nào được throw!
+    return department;
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Khác biệt với Minimal API:</strong> Trong Minimal API, nếu
+          <code>[FromBody]</code> không nhận được JSON hợp lệ, framework tự động trả về <strong>HTTP 400 Bad Request</strong>.
+          Trong MVC Controller, không có hành vi bảo vệ tự động này — bạn phải tự kiểm tra <code>ModelState</code>.</p>
+      </div>
+
+      <h3>Trường hợp 2 — Primitive type không có dữ liệu</h3>
+      <p>Với tham số nullable (<code>int? id</code>), giá trị sẽ là <code>null</code>. Với tham số không nullable
+        (<code>int id</code>), giá trị mặc định là <code>0</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// GET /departments/details  (không có id)
+public string Details(int? id)
+{
+    // id = null — không có lỗi
+    return $"Department info: {id}";  // "Department info: "
+}
+
+// GET /departments/info  (không có id)
+public string Info(int id)
+{
+    // id = 0 — không có lỗi
+    return $"Department info: {id}";  // "Department info: 0"
+}</code></pre>
+      </div>
+
+      <h3>Trường hợp 3 — Route parameter bắt buộc bị thiếu</h3>
+      <p>Nếu route template yêu cầu <code>{id}</code> (không optional) nhưng URL không cung cấp, routing sẽ không
+        match endpoint đó — request có thể trả về 404 mà không bao giờ vào action method.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+[Route("departments/details/{id}")]   // id bắt buộc
+public string Details(int id)
+{
+    return $"Department: {id}";
+}
+
+// GET /departments/details     → 404 (route không match)
+// GET /departments/details/5   → "Department: 5"
+
+// Nếu dùng {id?} thì:
+[HttpGet]
+[Route("departments/details/{id?}")]  // id optional
+public string DetailsOptional(int? id)
+{
+    return $"Department: {id}";
+}
+// GET /departments/details     → "Department: "  (id = null)</code></pre>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Input Formatter</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Input Formatter</em></p>
+
+      <p>Khi sử dụng <code>[FromBody]</code> để đọc dữ liệu từ body của HTTP request, ASP.NET Core cần biết
+        cách <strong>giải mã (deserialize)</strong> nội dung đó thành object C#.
+        Thành phần đảm nhiệm việc này được gọi là <strong>Input Formatter</strong>.</p>
+
+      <h3>Input Formatter là gì?</h3>
+      <p>Input Formatter là thành phần đọc raw bytes từ HTTP request body, xác định định dạng dữ liệu
+        (dựa vào header <code>Content-Type</code>), và chuyển đổi thành object .NET phù hợp.</p>
+
+      <table class="tbl">
+        <tr><th>Content-Type</th><th>Input Formatter</th><th>Mặc định?</th></tr>
+        <tr><td><code>application/json</code></td><td>System.Text.Json</td><td>Có — được thêm tự động khi gọi <code>AddControllers()</code></td></tr>
+        <tr><td><code>application/xml</code> / <code>text/xml</code></td><td>XmlSerializer / DataContract</td><td>Không — phải đăng ký thêm</td></tr>
+        <tr><td><code>application/x-www-form-urlencoded</code></td><td>FormCollection</td><td>Dùng cho form, không dùng cho <code>[FromBody]</code></td></tr>
+      </table>
+
+      <h3>Vấn đề khi dùng XML mà chưa đăng ký formatter</h3>
+      <p>Mặc định chỉ có JSON formatter. Nếu client gửi XML body mà không đăng ký XML formatter, server trả về
+        <strong>HTTP 415 Unsupported Media Type</strong>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpPost]
+public object Create([FromBody] Department department)
+{
+    return department;
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Request — XML body</span><span class="lang">xml</span></div>
+        <pre><code>POST /departments/create HTTP/1.1
+Content-Type: application/xml
+
+&lt;Department&gt;
+  &lt;Id&gt;12&lt;/Id&gt;
+  &lt;Name&gt;Software&lt;/Name&gt;
+  &lt;Description&gt;Good department&lt;/Description&gt;
+&lt;/Department&gt;</code></pre>
+      </div>
+
+      <p>Kết quả khi chưa có XML formatter: <strong>415 Unsupported Media Type</strong>.</p>
+
+      <h3>Thêm XML Input Formatter</h3>
+      <p>Để hỗ trợ cả JSON lẫn XML, thêm XML Serializer Formatter vào chuỗi cấu hình <code>AddControllers()</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers()
+    .AddXmlSerializerFormatters(); // Thêm dòng này để hỗ trợ XML
+
+var app = builder.Build();
+
+app.UseRouting();
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}"
+    );
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <p>Sau khi thêm, server hỗ trợ cả hai định dạng:</p>
+      <ul>
+        <li><code>Content-Type: application/json</code> → dùng JSON formatter (System.Text.Json)</li>
+        <li><code>Content-Type: application/xml</code> → dùng XML formatter (XmlSerializer)</li>
+      </ul>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Ngoài <code>AddXmlSerializerFormatters()</code>, còn có
+          <code>AddXmlDataContractSerializerFormatters()</code> dùng <code>DataContractSerializer</code> —
+          phù hợp hơn khi model có <code>[DataContract]</code>/<code>[DataMember]</code> attributes.
+          Thông thường, <code>AddXmlSerializerFormatters()</code> là lựa chọn phổ biến hơn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> ModelState &amp; Validation</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Model State</em></p>
+
+      <p>Trong MVC Controllers, các Data Annotation như <code>[Required]</code>, <code>[StringLength]</code>,
+        <code>[Range]</code>… được kiểm tra tự động trong quá trình model binding. Tuy nhiên — khác với Minimal API —
+        kết quả kiểm tra <strong>không tự động trả về lỗi HTTP 400</strong>. Kết quả được lưu vào đối tượng
+        <strong><code>ModelState</code></strong> và bạn phải tự kiểm tra trong action method.</p>
+
+      <h3>ModelState là gì?</h3>
+      <p><code>ModelState</code> (kiểu <code>ModelStateDictionary</code>) là dictionary lưu trữ:</p>
+      <ul>
+        <li>Các <strong>lỗi binding</strong> (ví dụ: truyền chuỗi "abc" vào tham số <code>int</code>)</li>
+        <li>Các <strong>lỗi validation</strong> từ Data Annotation (ví dụ: bỏ trống trường <code>[Required]</code>)</li>
+        <li>Giá trị gốc (attempted value) mà client đã gửi</li>
+      </ul>
+
+      <h3>Vấn đề khi không kiểm tra ModelState</h3>
+      <p>Xét action method sau với model <code>Department</code> có <code>[Required] Name</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Sai — không kiểm tra ModelState
+[HttpPost]
+public object Create([FromBody] Department department)
+{
+    // Nếu client không gửi Name, department.Name = null
+    // Nhưng action vẫn thực thi bình thường — lỗi bị bỏ qua!
+    return department;
+}</code></pre>
+      </div>
+
+      <p>Gửi JSON thiếu <code>Name</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">HTTP Request — thiếu Name</span><span class="lang">json</span></div>
+        <pre><code>POST /departments/create HTTP/1.1
+Content-Type: application/json
+
+{ "id": 1, "description": "No name department" }</code></pre>
+      </div>
+      <p>Kết quả: action vẫn chạy, trả về object với <code>name: null</code> — không có lỗi nào báo về client.</p>
+
+      <h3>Giải pháp — kiểm tra ModelState.IsValid</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+public class DepartmentsController : Controller
+{
+    [HttpPost]
+    public IActionResult Create([FromBody] Department department)
+    {
+        if (!ModelState.IsValid)
+        {
+            // Trả về 400 kèm danh sách lỗi validation
+            return BadRequest(ModelState);
+        }
+
+        // Dữ liệu hợp lệ — xử lý tiếp
+        return Ok(department);
+    }
+
+    // Ví dụ với tham số primitive bị sai kiểu
+    [HttpGet]
+    [Route("departments/details/{id}")]
+    public IActionResult Details(int id)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+        return Ok($"Department: {id}");
+    }
+}</code></pre>
+      </div>
+
+      <p>Response khi <code>Name</code> bị thiếu:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Response — 400 Bad Request</span><span class="lang">json</span></div>
+        <pre><code>{
+  "Name": [
+    "The Name field is required."
+  ]
+}</code></pre>
+      </div>
+
+      <h3>[ApiController] — kiểm tra ModelState tự động</h3>
+      <p>Nếu thêm attribute <code>[ApiController]</code> vào controller, ASP.NET Core sẽ tự động kiểm tra
+        <code>ModelState.IsValid</code> và trả về 400 <strong>trước khi</strong> vào action method —
+        giống như Minimal API. Không cần viết thủ công nữa.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[ApiController]
+[Route("api/[controller]")]
+public class DepartmentsController : ControllerBase
+{
+    [HttpPost]
+    public IActionResult Create([FromBody] Department department)
+    {
+        // [ApiController] đã tự kiểm tra ModelState rồi
+        // Nếu vào được đây thì department chắc chắn hợp lệ
+        return Ok(department);
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🔑</span><strong>Tóm tắt so sánh:</strong></p>
+        <ul>
+          <li><strong>Minimal API:</strong> Validation lỗi → tự động 400 (không cần làm gì thêm).</li>
+          <li><strong>MVC Controller (không có <code>[ApiController]</code>):</strong> Validation lỗi → ghi vào <code>ModelState</code>, bạn phải tự kiểm tra <code>ModelState.IsValid</code>.</li>
+          <li><strong>MVC Controller với <code>[ApiController]</code>:</strong> Validation lỗi → tự động 400 giống Minimal API.</li>
+        </ul>
+      </div>
+
+      <h3>Các Data Annotation phổ biến cho validation</h3>
+      <table class="tbl">
+        <tr><th>Attribute</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>[Required]</code></td><td>Trường bắt buộc, không được null/rỗng</td></tr>
+        <tr><td><code>[StringLength(max)]</code></td><td>Giới hạn độ dài chuỗi</td></tr>
+        <tr><td><code>[Range(min, max)]</code></td><td>Giới hạn giá trị số trong khoảng</td></tr>
+        <tr><td><code>[EmailAddress]</code></td><td>Kiểm tra định dạng email</td></tr>
+        <tr><td><code>[MinLength(n)]</code></td><td>Độ dài tối thiểu</td></tr>
+        <tr><td><code>[RegularExpression(pattern)]</code></td><td>Kiểm tra theo regex</td></tr>
+        <tr><td><code>[Compare("OtherProp")]</code></td><td>Hai trường phải bằng nhau (ví dụ: xác nhận mật khẩu)</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-08.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">08 · MVC Controllers — Routing</div>
+      </a>
+      <a class="next" href="lesson-10.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">10 · MVC Controllers — Producing Results</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

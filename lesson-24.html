@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 24 — Truy cập CSDL với Entity Framework Core | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 24 — Truy cập CSDL với Entity Framework Core</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Tại sao dùng EF Core</a></li>
+      <li><a href="#s2">2. EF Core hoạt động như thế nào</a></li>
+      <li><a href="#s3">3. Cài đặt NuGet packages</a></li>
+      <li><a href="#s4">4. Cấu hình DbContext, Entities &amp; Relationships</a></li>
+      <li><a href="#s5">5. Kết nối EF Core với SQL Server</a></li>
+      <li><a href="#s6">6. Chạy DB Migration</a></li>
+      <li><a href="#s7">7. Triển khai Departments EF Repository</a></li>
+      <li><a href="#s8">8. Bài tập 13 — Employees EF Repository</a></li>
+      <li><a href="#s9">9. Đáp án bài tập 13</a></li>
+      <li><a href="#s10">10. Include related entities</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 24</span>
+      <h1>Truy cập CSDL với Entity Framework Core</h1>
+      <p class="lead">EF Core — DbContext, entities &amp; relationships, kết nối SQL Server, migrations, repository pattern với EF Core, eager loading với Include.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Tại sao dùng EF Core</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Why use Entity Framework Core</em></p>
+
+      <p>Trước đây, project sử dụng <strong>in-memory repository</strong> để lưu trữ dữ liệu tạm thời. Mục tiêu của chương này là thay thế bằng <strong>SQL Server thật</strong>. Có hai lựa chọn phổ biến khi kết nối cơ sở dữ liệu từ .NET:</p>
+
+      <ul>
+        <li><strong>ADO.NET</strong> — thư viện tích hợp sẵn trong .NET, truy cập CSDL ở mức thấp bằng cách viết câu SQL thủ công.</li>
+        <li><strong>Entity Framework Core</strong> — ORM (Object-Relational Mapper) xây dựng trên nền ADO.NET, tự động ánh xạ giữa class C# và bảng CSDL.</li>
+      </ul>
+
+      <h3>Vấn đề khi dùng ADO.NET thuần</h3>
+      <p>Để thực hiện một thao tác đơn giản như <em>lấy một bản ghi Department theo ID</em>, lập trình viên phải tự xử lý nhiều bước:</p>
+      <ol class="steps">
+        <li>Tạo và mở <code>SqlConnection</code> (tài nguyên cần được giải phóng — dùng <code>using</code>).</li>
+        <li>Viết câu lệnh SQL thô dưới dạng chuỗi, dễ gây lỗi chính tả.</li>
+        <li>Tạo <code>SqlCommand</code> và thêm từng tham số một vào <code>command.Parameters</code>.</li>
+        <li>Tạo <code>SqlDataReader</code>, duyệt kết quả và thủ công convert từng cột sang đúng kiểu dữ liệu.</li>
+        <li>Đóng connection và reader, xử lý exception.</li>
+      </ol>
+
+      <p>Với truy vấn có 10–20 tham số, khối code ADO.NET trở nên rất dài và dễ sinh lỗi. Đây chính là lý do ORM ra đời.</p>
+
+      <h3>ORM giải quyết vấn đề gì</h3>
+      <p><strong>ORM — Object-Relational Mapping</strong> là kỹ thuật ánh xạ (map) các <em>class</em> trong ứng dụng tới các <em>bảng</em> trong CSDL quan hệ. Thay vì viết SQL thủ công, lập trình viên làm việc với các đối tượng C# bình thường; ORM tự sinh câu SQL tương ứng.</p>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Lý do dùng EF Core:</strong> Viết ít code hơn, ít lỗi hơn, dễ bảo trì hơn so với ADO.NET thuần. EF Core là ORM chính thức của Microsoft cho .NET, hỗ trợ nhiều CSDL: SQL Server, PostgreSQL, MySQL, SQLite, v.v.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> EF Core hoạt động như thế nào</h2>
+      <p class="subvideo-meta">Bài 2 · <em>How Entity Framework Core Works</em></p>
+
+      <p>EF Core dựa trên ba khái niệm trung tâm: <strong>Entities</strong>, <strong>DbContext</strong> và <strong>Migrations</strong>.</p>
+
+      <h3>Entities (Thực thể)</h3>
+      <p>Mỗi <strong>entity</strong> là một class C# thông thường tương ứng với một bảng trong CSDL. Mỗi property tương ứng với một cột. Quan hệ giữa các entity (1-nhiều, nhiều-nhiều) được biểu diễn bằng <em>navigation property</em>.</p>
+
+      <h3>DbContext</h3>
+      <p><strong>DbContext</strong> là trung tâm của EF Core. Nó đóng vai trò như một "đại diện in-memory" của toàn bộ database:</p>
+      <ul>
+        <li>Chứa các <code>DbSet&lt;T&gt;</code> — mỗi <code>DbSet</code> tương ứng một bảng, cung cấp LINQ để truy vấn dữ liệu.</li>
+        <li>Theo dõi trạng thái từng entity thông qua <strong>Change Tracker</strong>: <code>Unchanged</code>, <code>Modified</code>, <code>Added</code>, <code>Deleted</code>.</li>
+        <li>Khi gọi <code>SaveChanges()</code>, EF Core so sánh trạng thái hiện tại với trạng thái gốc và tự sinh câu <code>INSERT / UPDATE / DELETE</code> tương ứng.</li>
+      </ul>
+
+      <table class="tbl">
+        <tr><th>Trạng thái Change Tracker</th><th>Ý nghĩa</th><th>SQL được sinh</th></tr>
+        <tr><td><code>Unchanged</code></td><td>Dữ liệu chưa thay đổi</td><td>Không có</td></tr>
+        <tr><td><code>Modified</code></td><td>Property đã được sửa</td><td><code>UPDATE</code></td></tr>
+        <tr><td><code>Added</code></td><td>Entity mới thêm vào context</td><td><code>INSERT</code></td></tr>
+        <tr><td><code>Deleted</code></td><td>Entity đánh dấu xóa</td><td><code>DELETE</code></td></tr>
+      </table>
+
+      <h3>Migrations (Di chuyển schema)</h3>
+      <p><strong>Migration</strong> là cơ chế đồng bộ schema giữa model C# và cấu trúc CSDL thực tế. Mỗi lần thêm property vào entity hoặc tạo entity mới, developer chạy lệnh <code>Add-Migration</code> để EF Core sinh file migration mô tả thay đổi, rồi chạy <code>Update-Database</code> để áp dụng lên CSDL.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Migration cho phép kiểm soát lịch sử thay đổi schema như source control — mỗi migration là một "commit" trên cấu trúc CSDL.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Cài đặt NuGet packages</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Install EF Core NuGet Packages</em></p>
+
+      <p>Để sử dụng EF Core với SQL Server, cần cài đặt bốn package NuGet vào project WebApi. Bạn có thể dùng <em>NuGet Package Manager</em> trong Visual Studio hoặc .NET CLI:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Terminal — .NET CLI</span><span class="lang">bash</span></div>
+        <pre><code>dotnet add package Microsoft.EntityFrameworkCore --version 9.0.1
+dotnet add package Microsoft.EntityFrameworkCore.SqlServer --version 9.0.1
+dotnet add package Microsoft.EntityFrameworkCore.Tools --version 9.0.1
+dotnet add package Microsoft.EntityFrameworkCore.Design --version 9.0.1</code></pre>
+      </div>
+
+      <p>Sau khi cài, file <code>WebApi.csproj</code> sẽ có các <code>PackageReference</code> sau:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">WebApi.csproj</span><span class="lang">xml</span></div>
+        <pre><code>&lt;ItemGroup&gt;
+  &lt;PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.1" /&gt;
+  &lt;PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.1" /&gt;
+  &lt;PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.1"&gt;
+    &lt;PrivateAssets&gt;all&lt;/PrivateAssets&gt;
+    &lt;IncludeAssets&gt;runtime; build; native; contentfiles; analyzers; buildtransitive&lt;/IncludeAssets&gt;
+  &lt;/PackageReference&gt;
+  &lt;PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.1"&gt;
+    &lt;PrivateAssets&gt;all&lt;/PrivateAssets&gt;
+    &lt;IncludeAssets&gt;runtime; build; native; contentfiles; analyzers; buildtransitive&lt;/IncludeAssets&gt;
+  &lt;/PackageReference&gt;
+&lt;/ItemGroup&gt;</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Package</th><th>Vai trò</th></tr>
+        <tr><td><code>Microsoft.EntityFrameworkCore</code></td><td>Core library — DbContext, DbSet, LINQ provider, Change Tracker</td></tr>
+        <tr><td><code>Microsoft.EntityFrameworkCore.SqlServer</code></td><td>Driver kết nối SQL Server (thay bằng <code>.Sqlite</code>, <code>.Npgsql</code>, … nếu dùng CSDL khác)</td></tr>
+        <tr><td><code>Microsoft.EntityFrameworkCore.Tools</code></td><td>Cung cấp các lệnh PMC: <code>Add-Migration</code>, <code>Update-Database</code>, …</td></tr>
+        <tr><td><code>Microsoft.EntityFrameworkCore.Design</code></td><td>Hỗ trợ design-time: scaffolding, migration generation</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Hai package <code>Tools</code> và <code>Design</code> có <code>PrivateAssets="all"</code> — chúng chỉ cần thiết lúc phát triển, không được đóng gói vào build output khi publish.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Cấu hình DbContext, Entities &amp; Relationships</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Setup DbContext, Entities and Relationships</em></p>
+
+      <p>Bước đầu tiên khi sử dụng EF Core là tạo <strong>entity classes</strong> và <strong>DbContext</strong> — đây là "bản đồ in-memory" của CSDL.</p>
+
+      <h3>Entity: Department</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Department.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+
+namespace WebApi.Models
+{
+    public class Department
+    {
+        public Department() { }
+
+        public Department(int id, string name, string? description = "")
+        {
+            Id = id;
+            Name = name;
+            Description = description;
+        }
+
+        public int Id { get; set; }
+
+        [Required]
+        public string? Name { get; set; }
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+
+        [EmailAddress]
+        public string? Email { get; set; }
+
+        // Navigation property — không serialize để tránh vòng lặp
+        [JsonIgnore]
+        public List&lt;Employee&gt;? Employees { get; set; }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Entity: Employee</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Employee.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+
+namespace WebApi.Models
+{
+    public class Employee
+    {
+        public int Id { get; set; }
+
+        [Required]
+        public string? Name { get; set; }
+
+        [Required]
+        public string? Position { get; set; }
+
+        public double? Salary { get; set; }
+
+        // Foreign key
+        [Range(minimum: 1, maximum: int.MaxValue, ErrorMessage = "The department is required.")]
+        public int DepartmentId { get; set; }
+
+        // Navigation property
+        public Department? Department { get; set; }
+
+        public Employee() { }
+
+        public Employee(int id, string name, string position, double salary, int departmentId)
+        {
+            Id = id; Name = name; Position = position;
+            Salary = salary; DepartmentId = departmentId;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>DbContext: CompanyDbContext</h3>
+      <p>Tạo thư mục <code>Data/</code> và class <code>CompanyDbContext</code> kế thừa từ <code>DbContext</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Data/CompanyDbContext.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.EntityFrameworkCore;
+using WebApi.Models;
+
+namespace WebApi.Data
+{
+    public class CompanyDbContext : DbContext
+    {
+        public CompanyDbContext(DbContextOptions options) : base(options) { }
+
+        // Mỗi DbSet&lt;T&gt; tương ứng một bảng trong CSDL
+        public DbSet&lt;Department&gt;? Departments { get; set; }
+        public DbSet&lt;Employee&gt;? Employees { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            // Cấu hình quan hệ 1-nhiều: Department có nhiều Employee
+            modelBuilder.Entity&lt;Department&gt;()
+                .HasMany(d =&gt; d.Employees)
+                .WithOne(e =&gt; e.Department)
+                .HasForeignKey(e =&gt; e.DepartmentId);
+
+            // Seed data — dữ liệu mẫu khởi tạo cùng migration
+            modelBuilder.Entity&lt;Department&gt;().HasData(
+                new Department(1, "Sales", "Sales Department"),
+                new Department(2, "Engineering", "Engineering Department"),
+                new Department(3, "QA", "Quality Assurance")
+            );
+
+            modelBuilder.Entity&lt;Employee&gt;().HasData(
+                new Employee(1, "John Doe", "Engineer", 60000, 1),
+                new Employee(2, "Jane Smith", "Manager", 75000, 1),
+                new Employee(3, "Sam Brown", "Technician", 50000, 1),
+                new Employee(4, "Alice Johnson", "Analyst", 55000, 2),
+                new Employee(5, "Bob Lee", "Developer", 65000, 2),
+                new Employee(6, "Carol Wang", "Designer", 70000, 2),
+                new Employee(7, "David Kim", "Support", 48000, 3),
+                new Employee(8, "Eve Rogers", "Consultant", 72000, 3),
+                new Employee(9, "Franklin Zhang", "Architect", 80000, 3)
+            );
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Giải thích các thành phần quan trọng</h3>
+      <ul>
+        <li><strong><code>DbContextOptions options</code></strong> trong constructor — cho phép DI container truyền cấu hình kết nối vào (connection string, provider). Luôn chuyển sang <code>base(options)</code>.</li>
+        <li><strong><code>DbSet&lt;T&gt;</code></strong> — biểu diễn một bảng, hỗ trợ LINQ đầy đủ: <code>.Where()</code>, <code>.Find()</code>, <code>.ToList()</code>, v.v.</li>
+        <li><strong><code>OnModelCreating</code></strong> — nơi cấu hình Fluent API: quan hệ, ràng buộc, index, seed data. Đây là cách tường minh hơn so với Data Annotations.</li>
+        <li><strong><code>HasMany / WithOne / HasForeignKey</code></strong> — khai báo quan hệ 1-nhiều giữa <code>Department</code> và <code>Employee</code>.</li>
+        <li><strong><code>HasData()</code></strong> — seed data tự động được chèn vào CSDL khi chạy migration lần đầu.</li>
+      </ul>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><strong>Fluent API vs Data Annotations:</strong> Cả hai đều cấu hình được schema. Fluent API (trong <code>OnModelCreating</code>) ưu tiên hơn vì không "ô nhiễm" class entity bằng attribute và hỗ trợ nhiều tùy chọn hơn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Kết nối EF Core với SQL Server</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Configure EF Core to connect to SQL Server</em></p>
+
+      <p>Sau khi có <code>CompanyDbContext</code>, bước tiếp theo là cấu hình để EF Core biết kết nối tới đâu và đăng ký vào DI container.</p>
+
+      <h3>1. Khai báo connection string trong appsettings</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">appsettings.Development.json</span><span class="lang">json</span></div>
+        <pre><code>{
+  "ConnectionStrings": {
+    "CompanyManagement": "Data Source=(local);Initial Catalog=CompanyManagement;User ID=sa;Password=Password1;Trust Server Certificate=True"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  }
+}</code></pre>
+      </div>
+
+      <p>Giải thích các phần trong connection string:</p>
+      <table class="tbl">
+        <tr><th>Thành phần</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>Data Source=(local)</code></td><td>Tên server SQL. <code>(local)</code> = SQL Server cài local trên máy hiện tại</td></tr>
+        <tr><td><code>Initial Catalog=CompanyManagement</code></td><td>Tên database sẽ tạo/kết nối</td></tr>
+        <tr><td><code>User ID / Password</code></td><td>Xác thực SQL Authentication</td></tr>
+        <tr><td><code>Trust Server Certificate=True</code></td><td>Bỏ qua kiểm tra SSL certificate (dùng khi develop local)</td></tr>
+      </table>
+
+      <h3>2. Đăng ký DbContext vào DI container trong Program.cs</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.EntityFrameworkCore;
+using WebApi.Data;
+using WebApi.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Đăng ký CompanyDbContext với SQL Server provider
+builder.Services.AddDbContext&lt;CompanyDbContext&gt;(options =&gt;
+{
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("CompanyManagement")
+    );
+});
+
+// Thay thế in-memory repository bằng EF repository
+builder.Services.AddTransient&lt;IDepartmentsRepository, DepartmentsEFRepository&gt;();
+builder.Services.AddTransient&lt;IEmployeesRepository, EmployeesEFRepository&gt;();
+
+var app = builder.Build();
+// ... middleware pipeline
+app.Run();</code></pre>
+      </div>
+
+      <ul>
+        <li><code>AddDbContext&lt;T&gt;(options =&gt; ...)</code> đăng ký <code>CompanyDbContext</code> với lifetime <strong>Scoped</strong> (mặc định) — mỗi HTTP request có một instance DbContext riêng.</li>
+        <li><code>options.UseSqlServer(...)</code> chỉ định provider và connection string. Đổi thành <code>UseNpgsql()</code>, <code>UseSqlite()</code>… để đổi CSDL.</li>
+        <li><code>builder.Configuration.GetConnectionString("CompanyManagement")</code> đọc từ <code>appsettings.json</code> (section <code>ConnectionStrings</code>).</li>
+      </ul>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span>Không commit connection string (đặc biệt password) vào source control. Ở môi trường production, dùng <strong>Environment Variables</strong>, <strong>Azure Key Vault</strong> hoặc <strong>User Secrets</strong> để lưu trữ an toàn.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Chạy DB Migration</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Run DB Migration</em></p>
+
+      <p>Migration là bước kết nối giữa model C# và cấu trúc CSDL vật lý. Lần đầu tiên, migration <em>initial</em> sẽ tạo toàn bộ database, bảng và seed data.</p>
+
+      <h3>Các lệnh Migration trong Package Manager Console (PMC)</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Package Manager Console</span><span class="lang">powershell</span></div>
+        <pre><code># 1. Tạo migration mới (tên tùy chọn, thường đặt mô tả thay đổi)
+Add-Migration Init
+
+# 2. Áp dụng migration lên SQL Server — tạo database nếu chưa có
+Update-Database
+
+# 3. Xóa migration cuối cùng (nếu chưa apply lên DB)
+Remove-Migration</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Đảm bảo <strong>Default project</strong> trong PMC được chọn đúng project chứa <code>DbContext</code> (ở đây là <code>WebApi</code>) trước khi chạy lệnh.</p>
+      </div>
+
+      <h3>File migration được sinh ra</h3>
+      <p>Lệnh <code>Add-Migration Init</code> tạo thư mục <code>Migrations/</code> với file mô tả thay đổi schema:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Migrations/20250204220844_Init.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public partial class Init : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.CreateTable(
+            name: "Departments",
+            columns: table =&gt; new
+            {
+                Id = table.Column&lt;int&gt;(type: "int", nullable: false)
+                    .Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column&lt;string&gt;(type: "nvarchar(max)", nullable: false),
+                Description = table.Column&lt;string&gt;(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                Email = table.Column&lt;string&gt;(type: "nvarchar(max)", nullable: true)
+            },
+            constraints: table =&gt;
+            {
+                table.PrimaryKey("PK_Departments", x =&gt; x.Id);
+            });
+
+        migrationBuilder.CreateTable(
+            name: "Employees",
+            columns: table =&gt; new
+            {
+                Id = table.Column&lt;int&gt;(type: "int", nullable: false)
+                    .Annotation("SqlServer:Identity", "1, 1"),
+                Name = table.Column&lt;string&gt;(type: "nvarchar(max)", nullable: false),
+                Position = table.Column&lt;string&gt;(type: "nvarchar(max)", nullable: false),
+                Salary = table.Column&lt;double&gt;(type: "float", nullable: true),
+                DepartmentId = table.Column&lt;int&gt;(type: "int", nullable: false)
+            },
+            constraints: table =&gt;
+            {
+                table.PrimaryKey("PK_Employees", x =&gt; x.Id);
+                table.ForeignKey(
+                    name: "FK_Employees_Departments_DepartmentId",
+                    column: x =&gt; x.DepartmentId,
+                    principalTable: "Departments",
+                    principalColumn: "Id",
+                    onDelete: ReferentialAction.Cascade);
+            });
+
+        // Seed data (InsertData...) được sinh tự động từ HasData()
+        migrationBuilder.InsertData(
+            table: "Departments",
+            columns: new[] { "Id", "Description", "Email", "Name" },
+            values: new object[,]
+            {
+                { 1, "Sales Department", null, "Sales" },
+                { 2, "Engineering Department", null, "Engineering" },
+                { 3, "Quality Assurance", null, "QA" }
+            });
+    }
+
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropTable(name: "Employees");
+        migrationBuilder.DropTable(name: "Departments");
+    }
+}</code></pre>
+      </div>
+
+      <ul>
+        <li><strong>Phương thức <code>Up()</code></strong> — chứa các thay đổi cần áp dụng khi migrate lên (tạo bảng, thêm cột, v.v.).</li>
+        <li><strong>Phương thức <code>Down()</code></strong> — rollback (xóa bảng), dùng khi muốn hoàn tác migration.</li>
+        <li>EF Core tự động tạo <code>__EFMigrationsHistory</code> trong database để theo dõi migration nào đã được apply.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Triển khai Departments EF Repository</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Implement Departments EF Repository</em></p>
+
+      <p>Thay vì viết EF Core trực tiếp vào endpoint, chúng ta tạo một <strong>EF Repository</strong> mới implement cùng interface <code>IDepartmentsRepository</code>. Nhờ Dependency Injection, chỉ cần đổi đăng ký trong <code>Program.cs</code> — endpoints không cần thay đổi gì.</p>
+
+      <h3>Interface IDepartmentsRepository</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/IDepartmentsRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApi.Models
+{
+    public interface IDepartmentsRepository
+    {
+        void AddDepartment(Department? department);
+        bool DeleteDepartment(Department? department);
+        bool DepartmentExists(int departmentId);
+        Department? GetDepartmentById(int id);
+        List&lt;Department&gt; GetDepartments(string? filter = null);
+        bool UpdateDepartment(Department? department);
+    }
+}</code></pre>
+      </div>
+
+      <h3>DepartmentsEFRepository — triển khai đầy đủ</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/DepartmentsEFRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.EntityFrameworkCore;
+using WebApi.Data;
+
+namespace WebApi.Models
+{
+    public class DepartmentsEFRepository : IDepartmentsRepository
+    {
+        private readonly CompanyDbContext context;
+
+        public DepartmentsEFRepository(CompanyDbContext context)
+        {
+            this.context = context;
+        }
+
+        public void AddDepartment(Department? department)
+        {
+            if (department == null) return;
+            context.Add(department);       // EF theo dõi entity với trạng thái Added
+            context.SaveChanges();         // sinh câu INSERT và thực thi
+        }
+
+        public bool DeleteDepartment(Department? department)
+        {
+            if (department == null) return false;
+
+            var dep = context.Departments?.Find(department.Id);
+            if (dep == null) return false;
+
+            context.Departments?.Remove(department); // trạng thái Deleted
+            context.SaveChanges();                   // sinh câu DELETE
+            return true;
+        }
+
+        public bool DepartmentExists(int departmentId)
+        {
+            var exists = context.Departments?.Any(x =&gt; x.Id == departmentId);
+            return exists.HasValue &amp;&amp; exists.Value;
+        }
+
+        public Department? GetDepartmentById(int id)
+        {
+            return context.Departments?.Find(id); // tìm theo primary key, dùng cache nếu có
+        }
+
+        public List&lt;Department&gt; GetDepartments(string? filter = null)
+        {
+            if (string.IsNullOrWhiteSpace(filter))
+                return context.Departments?.ToList() ?? new();
+
+            // EF.Functions.Like = LIKE SQL — hỗ trợ pattern matching
+            return context.Departments?
+                .Where(x =&gt; EF.Functions.Like(x.Name, $"%{filter}%"))
+                .ToList() ?? new();
+        }
+
+        public bool UpdateDepartment(Department? department)
+        {
+            if (department == null) return false;
+
+            var dep = context.Departments?.Find(department.Id);
+            if (dep == null) return false;
+
+            // Cập nhật từng property — Change Tracker đánh dấu Modified
+            dep.Name = department.Name;
+            dep.Description = department.Description;
+            dep.Email = department.Email;
+
+            context.SaveChanges(); // sinh câu UPDATE chỉ với cột đã thay đổi
+            return true;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Lưu ý quan trọng</h3>
+      <ul>
+        <li><code>context.Add(entity)</code> — generic, EF tự xác định bảng từ kiểu. Cũng có thể dùng <code>context.Departments.Add(department)</code> — tường minh hơn, cùng kết quả.</li>
+        <li><code>context.Departments?.Find(id)</code> — tìm theo primary key. Ưu điểm: nếu entity đã có trong Change Tracker (đã load trước đó trong cùng request), EF không gửi thêm query SQL.</li>
+        <li><code>EF.Functions.Like()</code> — tương đương <code>LIKE '%filter%'</code> trong SQL. Không thể dùng <code>string.Contains()</code> với EF nếu muốn case-insensitive nhất quán trên mọi CSDL.</li>
+        <li><code>SaveChanges()</code> — phải gọi sau mỗi thay đổi để thực sự ghi vào CSDL. Nếu quên, dữ liệu chỉ thay đổi trong bộ nhớ.</li>
+      </ul>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Sức mạnh của Repository Pattern + DI:</strong> Endpoints không biết gì về EF Core hay SQL Server. Muốn đổi sang provider khác hoặc in-memory lại để test, chỉ cần thay một dòng đăng ký trong <code>Program.cs</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Bài tập 13 — Employees EF Repository</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Assignment 13 — Implement Employees EF Repository</em></p>
+
+      <p>Đây là bài tập thực hành: tự triển khai <code>EmployeesEFRepository</code> tương tự <code>DepartmentsEFRepository</code>, implement interface <code>IEmployeesRepository</code>.</p>
+
+      <h3>Interface IEmployeesRepository</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/IEmployeesRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApi.Models
+{
+    public interface IEmployeesRepository
+    {
+        void AddEmployee(Employee? employee);
+        bool DeleteEmployee(Employee? employee);
+        bool EmployeeExists(int employeeId);
+        Employee? GetEmployeeById(int id);
+        List&lt;Employee&gt; GetEmployees(string? filter = null, int? departmentId = null);
+        bool UpdateEmployee(Employee? employee);
+    }
+}</code></pre>
+      </div>
+
+      <h3>Yêu cầu bài tập</h3>
+      <ol class="steps">
+        <li>Tạo class <code>EmployeesEFRepository</code> trong thư mục <code>Models/</code>.</li>
+        <li>Implement interface <code>IEmployeesRepository</code>.</li>
+        <li>Inject <code>CompanyDbContext</code> qua constructor.</li>
+        <li>Triển khai đầy đủ 6 phương thức: Add, Delete, Exists, GetById, GetAll, Update.</li>
+        <li>Phương thức <code>GetEmployees</code> phải hỗ trợ lọc theo <code>filter</code> (tên) và <code>departmentId</code>.</li>
+        <li>Đăng ký vào DI trong <code>Program.cs</code>: <code>AddTransient&lt;IEmployeesRepository, EmployeesEFRepository&gt;()</code>.</li>
+      </ol>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Xem lại <code>DepartmentsEFRepository</code> để làm mẫu. Cấu trúc gần giống — chỉ cần thay <code>Department</code> bằng <code>Employee</code> và <code>Departments</code> bằng <code>Employees</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Đáp án bài tập 13</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Assignment 13 (Answer) — Implement Employees EF Repository</em></p>
+
+      <p>Đây là cài đặt hoàn chỉnh của <code>EmployeesEFRepository</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/EmployeesEFRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.EntityFrameworkCore;
+using WebApi.Data;
+
+namespace WebApi.Models
+{
+    public class EmployeesEFRepository : IEmployeesRepository
+    {
+        private readonly CompanyDbContext context;
+
+        public EmployeesEFRepository(CompanyDbContext context)
+        {
+            this.context = context;
+        }
+
+        public void AddEmployee(Employee? employee)
+        {
+            if (employee == null) return;
+
+            // Cách 1: dùng context.Employees?.Add() — tường minh
+            context.Employees?.Add(employee);
+            context.SaveChanges();
+        }
+
+        public bool DeleteEmployee(Employee? employee)
+        {
+            if (employee == null) return false;
+
+            var emp = context.Employees?.Find(employee.Id);
+            if (emp == null) return false;
+
+            context.Employees?.Remove(employee);
+            context.SaveChanges();
+            return true;
+        }
+
+        public bool EmployeeExists(int employeeId)
+        {
+            var exists = context.Employees?.Any(x =&gt; x.Id == employeeId);
+            return exists.HasValue &amp;&amp; exists.Value;
+        }
+
+        public Employee? GetEmployeeById(int id)
+        {
+            // Dùng Include để tải eager Department — xem Bài 10
+            return context.Employees?
+                .Include(x =&gt; x.Department)
+                .First(x =&gt; x.Id == id);
+        }
+
+        public List&lt;Employee&gt; GetEmployees(string? filter = null, int? departmentId = null)
+        {
+            // Lọc theo departmentId có ưu tiên cao hơn
+            if (departmentId.HasValue)
+            {
+                return context.Employees?
+                    .Where(x =&gt; x.DepartmentId == departmentId.Value)
+                    .ToList() ?? new();
+            }
+            else if (!string.IsNullOrWhiteSpace(filter))
+            {
+                return context.Employees?
+                    .Where(x =&gt; EF.Functions.Like(x.Name, $"%{filter}%"))
+                    .ToList() ?? new();
+            }
+
+            return context.Employees?.ToList() ?? new();
+        }
+
+        public bool UpdateEmployee(Employee? employee)
+        {
+            if (employee == null) return false;
+
+            var emp = context.Employees?.Find(employee.Id);
+            if (emp == null) return false;
+
+            emp.Name = employee.Name;
+            emp.Position = employee.Position;
+            emp.Salary = employee.Salary;
+            emp.DepartmentId = employee.DepartmentId;
+
+            context.SaveChanges();
+            return true;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Điểm khác biệt với DepartmentsEFRepository</h3>
+      <ul>
+        <li><code>GetEmployees</code> hỗ trợ <strong>hai tham số lọc</strong>: <code>departmentId</code> (lọc theo phòng ban) và <code>filter</code> (lọc theo tên). Nếu có <code>departmentId</code> thì ưu tiên dùng trước.</li>
+        <li><code>GetEmployeeById</code> dùng <code>.Include(x =&gt; x.Department)</code> để tải eager related entity — chi tiết ở Bài 10.</li>
+        <li>Sử dụng <code>context.Employees?.Add(employee)</code> thay vì <code>context.Add()</code> — cả hai đều đúng, <code>Add()</code> tường minh hơn khi làm việc với nhiều DbSet.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Include related entities — Eager Loading</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Include related entities</em></p>
+
+      <p>Khi truy vấn một entity có <em>navigation property</em>, EF Core theo mặc định <strong>không tự động tải</strong> dữ liệu liên quan (lazy loading mặc định bị tắt). Để tải dữ liệu quan hệ cùng lúc với entity chính, dùng <strong>eager loading</strong> qua phương thức <code>.Include()</code>.</p>
+
+      <h3>Vấn đề không có Include</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Không có Include — Department = null</span><span class="lang">csharp</span></div>
+        <pre><code>// Truy vấn Employee theo ID — Department navigation property sẽ là null
+public Employee? GetEmployeeById(int id)
+{
+    return context.Employees?.Find(id);
+    // employee.Department == null !
+}</code></pre>
+      </div>
+
+      <h3>Giải pháp: Eager Loading với .Include()</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/EmployeesEFRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>public Employee? GetEmployeeById(int id)
+{
+    // Include() yêu cầu EF Core JOIN với bảng Departments
+    // và populate Department navigation property
+    return context.Employees?
+        .Include(x =&gt; x.Department)   // eager load related Department
+        .FirstOrDefault(x =&gt; x.Id == id);
+}</code></pre>
+      </div>
+
+      <p>EF Core sẽ sinh câu SQL có <code>INNER JOIN</code> hoặc <code>LEFT JOIN</code> tùy cấu hình:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">SQL được sinh bởi EF Core</span><span class="lang">sql</span></div>
+        <pre><code>SELECT e.Id, e.Name, e.Position, e.Salary, e.DepartmentId,
+       d.Id, d.Name, d.Description, d.Email
+FROM Employees AS e
+LEFT JOIN Departments AS d ON e.DepartmentId = d.Id
+WHERE e.Id = @id</code></pre>
+      </div>
+
+      <h3>ThenInclude — Include lồng nhiều cấp</h3>
+      <p>Nếu entity liên quan cũng có navigation property, dùng <code>.ThenInclude()</code> tiếp nối:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Ví dụ Include nhiều cấp</span><span class="lang">csharp</span></div>
+        <pre><code>// Giả sử Department có navigation property Manager (Employee)
+context.Employees
+    .Include(e =&gt; e.Department)
+        .ThenInclude(d =&gt; d.Manager)
+    .ToList();</code></pre>
+      </div>
+
+      <h3>Xử lý vòng lặp tuần hoàn (Circular Reference)</h3>
+      <p>Khi serialize <code>Employee</code> có <code>Department</code>, và <code>Department</code> lại có <code>List&lt;Employee&gt;</code>, JSON serializer sẽ gặp vòng lặp vô tận. Giải pháp: dùng <code>[JsonIgnore]</code> trên property gây vòng lặp.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Department.cs — ngăn circular reference</span><span class="lang">csharp</span></div>
+        <pre><code>public class Department
+{
+    // ...các property khác...
+
+    [JsonIgnore]  // Không serialize collection Employees khi trả về API
+    public List&lt;Employee&gt;? Employees { get; set; }
+}</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Kỹ thuật Loading</th><th>Cách dùng</th><th>Khi nào dùng</th></tr>
+        <tr><td><strong>Eager Loading</strong></td><td><code>.Include()</code> trong query</td><td>Biết trước cần dữ liệu liên quan — 1 query duy nhất</td></tr>
+        <tr><td><strong>Explicit Loading</strong></td><td><code>context.Entry(e).Reference(e =&gt; e.Department).Load()</code></td><td>Tải có điều kiện sau khi đã có entity</td></tr>
+        <tr><td><strong>Lazy Loading</strong></td><td>Cần cài <code>UseLazyLoadingProxies()</code></td><td>Tự động tải khi access property — cẩn thận N+1 problem</td></tr>
+      </table>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>N+1 Query Problem:</strong> Nếu dùng lazy loading và load danh sách 100 Employee, mỗi lần access <code>employee.Department</code> sẽ tạo thêm 1 query SQL — tổng cộng 101 queries. Dùng <code>.Include()</code> (eager loading) để tải tất cả trong 1 query JOIN duy nhất.</p>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Tóm tắt chương:</strong> EF Core là ORM chính thức của .NET, cho phép làm việc với CSDL quan hệ thông qua các class C# thay vì SQL thủ công. Kiến trúc bao gồm: Entities (class ánh xạ bảng), DbContext (quản lý kết nối và Change Tracker), Migrations (đồng bộ schema), và Repository pattern (tách biệt logic nghiệp vụ khỏi EF Core). Eager loading với <code>.Include()</code> là cách khuyến nghị để tải dữ liệu liên quan hiệu quả.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-23.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">23 · Web API — Documentation &amp; Versioning</div>
+      </a>
+      <a class="next" href="lesson-25.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">25 · Configuration</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 06 — Minimal API: Producing Results | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 06 — Minimal API: Producing Results</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Các kiểu trả về của Minimal API</a></li>
+      <li><a href="#s2">2. Kết hợp Results và TypedResults</a></li>
+      <li><a href="#s3">3. Chuẩn Problem Details (RFC 7807)</a></li>
+      <li><a href="#s4">4. Chuẩn hóa kết quả API</a></li>
+      <li><a href="#s5">5. Tùy biến kết quả với IResult</a></li>
+      <li><a href="#s6">6. Bài tập: CRUD cho Employees</a></li>
+      <li><a href="#s7">7. Đáp án: CRUD cho Employees</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 06</span>
+      <h1>Minimal API — Producing Results</h1>
+      <p class="lead">Tìm hiểu cách tạo và trả về kết quả từ Minimal API endpoint: từ trả chuỗi/object đơn giản đến <code>IResult</code>, <code>Results</code>/<code>TypedResults</code>, status code chính xác, chuẩn Problem Details (RFC 7807), và tùy biến response với class riêng.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Các kiểu trả về của Minimal API</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Minimal API Return Types</em></p>
+
+      <p>Trong Minimal API, endpoint handler là một lambda (hoặc phương thức) được gọi khi request khớp route. Giá trị mà handler trả về sẽ được framework chuyển thành <strong>HTTP response</strong>. ASP.NET Core hỗ trợ nhiều kiểu trả về khác nhau, mỗi kiểu có hành vi mặc định riêng.</p>
+
+      <h3>Trả về trực tiếp: string và object</h3>
+      <p>Cách đơn giản nhất là trả về ngay từ lambda:</p>
+      <ul>
+        <li>Trả về <code>string</code> → status <strong>200 OK</strong>, <code>Content-Type: text/plain</code>.</li>
+        <li>Trả về bất kỳ <strong>object</strong> nào (class, record, anonymous type) → framework tự serialize thành <strong>JSON</strong>, status <strong>200 OK</strong>, <code>Content-Type: application/json</code>.</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// Trả về string → 200 OK, text/plain
+app.MapGet("/", () =&gt; "Hello World!");
+
+// Trả về object → 200 OK, application/json
+app.MapGet("/employees", () =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return employees; // tự động serialize JSON
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Vấn đề khi chỉ trả về object</h3>
+      <p>Trả thẳng object hoạt động tốt khi mọi thứ thành công. Nhưng khi cần báo lỗi — ví dụ request không hợp lệ — nếu vẫn trả về object thông thường, <strong>status code vẫn là 200 OK</strong> dù thực ra là lỗi. Client không thể phân biệt thành công hay thất bại chỉ qua status code.</p>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Trả về chuỗi lỗi dạng <code>return "Employee is not valid"</code> với status 200 là sai về ngữ nghĩa HTTP. Client mong đợi 400/404/422 cho các tình huống lỗi, không phải 200.</p>
+      </div>
+
+      <h3>Giao diện IResult</h3>
+      <p>Để kiểm soát hoàn toàn response (status code, header, body), handler nên trả về <code>IResult</code>. Đây là interface cốt lõi:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">IResult — định nghĩa</span><span class="lang">csharp</span></div>
+        <pre><code>// Interface nội bộ của ASP.NET Core (đơn giản hóa)
+public interface IResult
+{
+    Task ExecuteAsync(HttpContext httpContext);
+}</code></pre>
+      </div>
+
+      <p>Khi handler trả về <code>IResult</code>, framework gọi <code>ExecuteAsync</code> để ghi response. Bạn không cần tự implement interface này vì framework cung cấp sẵn hai lớp helper tĩnh: <strong><code>Results</code></strong> và <strong><code>TypedResults</code></strong>.</p>
+
+      <h3>Helper class Results — các phương thức thường dùng</h3>
+      <table class="tbl">
+        <tr><th>Phương thức</th><th>Status Code</th><th>Mô tả</th></tr>
+        <tr><td><code>Results.Ok(obj)</code></td><td>200</td><td>Thành công, trả kèm body JSON</td></tr>
+        <tr><td><code>Results.Created(uri, obj)</code></td><td>201</td><td>Tạo resource mới thành công</td></tr>
+        <tr><td><code>Results.NoContent()</code></td><td>204</td><td>Thành công, không có body</td></tr>
+        <tr><td><code>Results.BadRequest(msg)</code></td><td>400</td><td>Request không hợp lệ</td></tr>
+        <tr><td><code>Results.NotFound()</code></td><td>404</td><td>Resource không tồn tại</td></tr>
+        <tr><td><code>Results.Json(obj)</code></td><td>200</td><td>Serialize object thành JSON (tùy chỉnh options)</td></tr>
+        <tr><td><code>Results.Redirect(url)</code></td><td>302</td><td>Chuyển hướng đến URL khác</td></tr>
+        <tr><td><code>Results.File(data, ct)</code></td><td>200</td><td>Trả về file/binary content</td></tr>
+        <tr><td><code>Results.Problem(...)</code></td><td>500+</td><td>Lỗi server theo chuẩn RFC 7807</td></tr>
+        <tr><td><code>Results.ValidationProblem(errors)</code></td><td>400</td><td>Lỗi validation theo chuẩn RFC 7807</td></tr>
+      </table>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapGet("/employees", () =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return TypedResults.Ok(employees); // 200 OK + JSON array
+});
+
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null || employee.Id &lt;= 0)
+    {
+        // 400 Bad Request + thông báo lỗi
+        return Results.BadRequest("Employee is not provided or is not valid.");
+    }
+
+    EmployeesRepository.AddEmployee(employee);
+    return Results.Ok("Employee added successfully."); // 200 OK
+
+}).WithParameterValidation();
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> <code>WithParameterValidation()</code> là extension method từ package <strong>MinimalApis.Extensions</strong>. Khi được gọi, nó tự động chạy Data Annotation validation trên các tham số của endpoint trước khi gọi handler.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Kết hợp Results và TypedResults</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Mix and Match Results and TypedResults</em></p>
+
+      <p>ASP.NET Core cung cấp hai lớp helper song song: <code>Results</code> (non-generic) và <code>TypedResults</code> (generic/strongly-typed). Hiểu được sự khác biệt và cách dùng đúng mỗi loại giúp code rõ ràng và an toàn hơn.</p>
+
+      <h3>Results vs TypedResults</h3>
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>Results</th><th>TypedResults</th></tr>
+        <tr><td>Kiểu trả về</td><td><code>IResult</code> (non-generic)</td><td><code>Ok&lt;T&gt;</code>, <code>Created&lt;T&gt;</code>... (strongly-typed)</td></tr>
+        <tr><td>Unit testing</td><td>Khó kiểm tra kiểu cụ thể</td><td>Dễ dàng assert kiểu chính xác</td></tr>
+        <tr><td>OpenAPI metadata</td><td>Không tự động generate</td><td>Tự động expose kiểu trong Swagger</td></tr>
+        <tr><td>Khi nên dùng</td><td>Khi trả nhiều kiểu khác nhau trong cùng branch</td><td>Khi branch thành công có kiểu rõ ràng</td></tr>
+      </table>
+
+      <h3>Vấn đề type consistency khi dùng TypedResults</h3>
+      <p>Khi một handler có nhiều nhánh trả về, compiler yêu cầu tất cả các nhánh phải có <strong>cùng kiểu trả về</strong>. Với <code>TypedResults</code>, <code>TypedResults.Ok&lt;Employee&gt;</code> và <code>TypedResults.Created&lt;Employee&gt;</code> là hai kiểu khác nhau, dẫn đến lỗi biên dịch nếu dùng cả hai trong cùng handler mà không khai báo union type.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — lỗi biên dịch</span><span class="lang">csharp</span></div>
+        <pre><code>// SAI: compiler báo lỗi vì hai nhánh có kiểu khác nhau
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null)
+        return TypedResults.BadRequest("invalid"); // BadRequest&lt;string&gt;
+
+    EmployeesRepository.AddEmployee(employee);
+    return TypedResults.Created($"/employees/{employee.Id}", employee); // Created&lt;Employee&gt;
+    // Compiler: cannot implicitly convert BadRequest&lt;string&gt; to Created&lt;Employee&gt;
+});</code></pre>
+      </div>
+
+      <h3>Giải pháp: Results&lt;T1, T2&gt; — union type</h3>
+      <p>Khi handler có thể trả nhiều kiểu <code>IResult</code> cụ thể, khai báo kiểu trả về là <code>Results&lt;T1, T2, ...&gt;</code>. Cách này giữ được lợi ích strongly-typed của <code>TypedResults</code> đồng thời cho phép nhiều kiểu trả về:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Http.HttpResults;
+using WebApi.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapGet("/employees", () =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return TypedResults.Ok(employees); // Ok&lt;List&lt;Employee&gt;&gt;
+});
+
+// Khai báo kiểu trả về tường minh với Results&lt;T1,T2&gt;
+app.MapPost("/employees", (Employee employee) =&gt;
+    Results&lt;BadRequest&lt;string&gt;, Created&lt;Employee&gt;&gt;
+{
+    if (employee is null)
+        return TypedResults.BadRequest("Employee is not provided or is not valid.");
+
+    EmployeesRepository.AddEmployee(employee);
+    return TypedResults.Created($"/employees/{employee.Id}", employee);
+
+}).WithParameterValidation();
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Phương thức Created — ngữ nghĩa đúng cho POST</h3>
+      <p>Khi client gửi POST để tạo resource mới, response đúng chuẩn HTTP là <strong>201 Created</strong>, kèm header <code>Location</code> trỏ đến URL của resource vừa tạo và body chứa resource đó. <code>TypedResults.Created(uri, value)</code> thực hiện đúng điều này:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs — POST đúng chuẩn</span><span class="lang">csharp</span></div>
+        <pre><code>app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null)
+        return Results.BadRequest("Employee is not provided.");
+
+    // Cần đảm bảo employee.Id hợp lệ trước khi thêm
+    int maxId = EmployeesRepository.GetEmployees().Max(e =&gt; e.Id);
+    employee = employee with { Id = maxId + 1 };
+
+    EmployeesRepository.AddEmployee(employee);
+
+    // 201 Created + Location: /employees/{id} + body JSON employee
+    return TypedResults.Created($"/employees/{employee.Id}", employee);
+
+}).WithParameterValidation();</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Khi nào dùng gì?</strong> — Với nhánh thành công (happy path): ưu tiên <code>TypedResults</code>. Với nhánh lỗi hoặc khi handler trả nhiều kiểu: dùng <code>Results&lt;T1,T2&gt;</code> để khai báo union, hoặc dùng <code>Results</code> nếu không cần strongly-typed.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Chuẩn Problem Details (RFC 7807)</h2>
+      <p class="subvideo-meta">Bài 3 · <em>The Problem Details Standard</em></p>
+
+      <p>Khi API trả về lỗi, nếu mỗi endpoint tự định nghĩa format JSON riêng thì client phải xử lý nhiều cấu trúc khác nhau — rất phức tạp và dễ gây bug. <strong>RFC 7807 — Problem Details for HTTP APIs</strong> là tiêu chuẩn quốc tế định nghĩa một format JSON thống nhất cho mọi lỗi API.</p>
+
+      <h3>Cấu trúc Problem Details JSON</h3>
+      <p>Mỗi response lỗi theo RFC 7807 là một JSON object với các trường chuẩn:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Problem Details response (ví dụ)</span><span class="lang">json</span></div>
+        <pre><code>{
+  "type": "https://tools.ietf.org/html/rfc7807",
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "Position": ["The Position field is required."],
+    "id": ["Employee is not provided or is not valid."]
+  }
+}</code></pre>
+      </div>
+
+      <table class="tbl">
+        <tr><th>Trường</th><th>Ý nghĩa</th></tr>
+        <tr><td><code>type</code></td><td>URI tham chiếu đến tài liệu mô tả loại lỗi</td></tr>
+        <tr><td><code>title</code></td><td>Mô tả ngắn gọn, con người đọc được</td></tr>
+        <tr><td><code>status</code></td><td>HTTP status code của lỗi</td></tr>
+        <tr><td><code>detail</code></td><td>Chi tiết cụ thể về lỗi (tuỳ chọn)</td></tr>
+        <tr><td><code>instance</code></td><td>URI của request gây ra lỗi (tuỳ chọn)</td></tr>
+        <tr><td><code>errors</code></td><td>Map field → danh sách lỗi (cho validation)</td></tr>
+      </table>
+
+      <h3>Tại sao cần chuẩn này?</h3>
+      <p>Xem xét tình huống thực tế: validation từ Data Annotations (qua <code>WithParameterValidation()</code>) trả về format khác với lỗi bạn tự trả về bằng <code>Results.BadRequest("some string")</code>. Client sẽ không biết cần parse cấu trúc nào.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> <strong>RFC 7807</strong> (nay cập nhật thành RFC 9457) được định nghĩa tại <code>https://tools.ietf.org/html/rfc7807</code>. Đây là tiêu chuẩn công nghiệp — bất kỳ API nào công khai đều nên tuân theo.</p>
+      </div>
+
+      <h3>Results.ValidationProblem và Results.Problem</h3>
+      <p>ASP.NET Core cung cấp sẵn hai helper để tạo response theo chuẩn RFC 7807 mà không cần tự build JSON:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// ValidationProblem: lỗi 400 do dữ liệu không hợp lệ
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null || employee.Id &lt; 0)
+    {
+        return Results.ValidationProblem(new Dictionary&lt;string, string[]&gt;
+        {
+            { "id", new[] { "Employee is not provided or is not valid." } }
+        });
+        // Trả về 400 + JSON Problem Details
+    }
+
+    EmployeesRepository.AddEmployee(employee);
+    return TypedResults.Created($"/employees/{employee.Id}", employee);
+
+}).WithParameterValidation();
+
+// Problem: lỗi server chung (500 hoặc status khác)
+app.MapGet("/danger", () =&gt;
+{
+    return Results.Problem(
+        title: "Unexpected server error",
+        detail: "Something went wrong processing your request.",
+        statusCode: 500
+    );
+});</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Khi bạn cần báo lỗi, ưu tiên <code>Results.ValidationProblem</code> (lỗi do input) hoặc <code>Results.Problem</code> (lỗi phía server) thay vì <code>Results.BadRequest("chuỗi lỗi")</code>. Đây là cách chuẩn và nhất quán nhất.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Chuẩn hóa kết quả API</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Standardize API Results</em></p>
+
+      <p>Chỉ dùng <code>Results.ValidationProblem</code> trong handler chưa đủ để đảm bảo <em>mọi</em> response lỗi đều nhất quán. Còn hai tình huống cần xử lý: <strong>404 không có body</strong> (khi route không khớp) và <strong>exception chưa được bắt</strong> (500 với stack trace HTML).</p>
+
+      <h3>Tình huống 1: 404 không có body</h3>
+      <p>Khi client gọi URL không tồn tại (ví dụ <code>/employees/99999</code> khi route tồn tại nhưng không tìm thấy dữ liệu, hoặc URL route không tồn tại hoàn toàn), ASP.NET Core mặc định trả về 404 với <strong>body rỗng</strong> — không theo chuẩn Problem Details.</p>
+
+      <h3>Tình huống 2: Exception không được bắt</h3>
+      <p>Khi code throw exception, ở môi trường production server trả về trang lỗi HTML hoặc JSON không theo chuẩn — cũng không nhất quán.</p>
+
+      <h3>Giải pháp: AddProblemDetails + UseStatusCodePages + UseExceptionHandler</h3>
+      <p>Ba bước để đảm bảo <em>toàn bộ</em> response lỗi đều theo chuẩn RFC 7807:</p>
+
+      <ol class="steps">
+        <li><strong><code>builder.Services.AddProblemDetails()</code></strong> — đăng ký service Problem Details vào DI container. Khi được đăng ký, các middleware lỗi sẽ biết cách format JSON theo chuẩn.</li>
+        <li><strong><code>app.UseStatusCodePages()</code></strong> — middleware này bắt mọi response có status code lỗi (4xx/5xx) nhưng <em>không có body</em>, rồi tự động điền JSON Problem Details vào body.</li>
+        <li><strong><code>app.UseExceptionHandler()</code></strong> — middleware bắt exception chưa được xử lý, trả về 500 dạng Problem Details JSON thay vì stack trace.</li>
+      </ol>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Bước 1: Đăng ký Problem Details service
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+
+// Bước 2: Exception handler (chỉ khi không phải development)
+// Ở development, developer exception page hữu ích hơn
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler(); // format exception → Problem Details JSON
+}
+
+// Bước 3: Điền body cho mọi response lỗi không có body (404, 405...)
+app.UseStatusCodePages();
+
+app.MapGet("/employees", () =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return TypedResults.Ok(employees);
+});
+
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null || employee.Id &lt; 0)
+    {
+        return Results.ValidationProblem(new Dictionary&lt;string, string[]&gt;
+        {
+            { "id", new[] { "Employee is not provided or is not valid." } }
+        });
+    }
+
+    EmployeesRepository.AddEmployee(employee);
+    return TypedResults.Created($"/employees/{employee.Id}", employee);
+
+}).WithParameterValidation();
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Kết quả sau khi chuẩn hóa</h3>
+      <p>Với cấu hình trên, <em>mọi</em> tình huống lỗi đều trả về JSON Problem Details nhất quán:</p>
+      <ul>
+        <li>URL không tồn tại → 404 + Problem Details body (nhờ <code>UseStatusCodePages</code>)</li>
+        <li>Exception chưa bắt → 500 + Problem Details body (nhờ <code>UseExceptionHandler</code>)</li>
+        <li>Validation lỗi → 400 + Problem Details body (nhờ <code>Results.ValidationProblem</code>)</li>
+        <li>Request thành công → 200/201 + JSON data bình thường</li>
+      </ul>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Thứ tự middleware quan trọng.</strong> <code>UseExceptionHandler</code> phải đặt trước các middleware khác để bắt được exception từ toàn bộ pipeline. <code>UseStatusCodePages</code> nên đặt sớm tương tự.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Tùy biến kết quả với IResult</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Customize Results by Implementing IResult</em></p>
+
+      <p>Tất cả các helper trong <code>Results</code> và <code>TypedResults</code> đều tối ưu cho việc trả về JSON — phù hợp với API. Nhưng đôi khi bạn cần trả về định dạng khác (HTML, CSV, file nhị phân, XML, v.v.) với logic đặc thù. Lúc này hãy tự implement <code>IResult</code>.</p>
+
+      <h3>Interface IResult</h3>
+      <p><code>IResult</code> chỉ có một phương thức cần implement:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">IResult (simplified)</span><span class="lang">csharp</span></div>
+        <pre><code>public interface IResult
+{
+    // Framework gọi phương thức này để ghi response
+    Task ExecuteAsync(HttpContext httpContext);
+}</code></pre>
+      </div>
+
+      <p>Bên trong <code>ExecuteAsync</code>, bạn có toàn quyền truy cập vào <code>HttpContext</code> — tức là có thể set bất kỳ header, status code, hay content type nào, rồi ghi trực tiếp vào response body.</p>
+
+      <h3>Ví dụ: HtmlResult</h3>
+      <p>Tạo class <code>HtmlResult</code> để trả về nội dung HTML thay vì JSON:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Results/HtmlResult.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Text;
+
+namespace WebApi.Results
+{
+    public class HtmlResult : IResult
+    {
+        private readonly string html;
+
+        public HtmlResult(string html)
+        {
+            this.html = html;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            // Set Content-Type để browser biết đây là HTML
+            httpContext.Response.ContentType = "text/html";
+
+            // Set Content-Length để tránh chunked transfer
+            httpContext.Response.ContentLength = Encoding.UTF8.GetByteCount(html);
+
+            // Ghi HTML vào body
+            await httpContext.Response.WriteAsync(html);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Sử dụng HtmlResult trong endpoint</h3>
+      <p>Khi dùng <code>IResult</code> tùy biến, nên khai báo kiểu trả về tường minh để framework và Swagger biết kiểu response chính xác:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Models;
+using WebApi.Results;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+    app.UseExceptionHandler();
+
+app.UseStatusCodePages();
+
+// Khai báo kiểu trả về tường minh: HtmlResult
+app.MapGet("/", HtmlResult () =&gt;
+{
+    string html = "&lt;h2&gt;Welcome to our API&lt;/h2&gt; Our API is used to learn ASP.NET Core.";
+    return new HtmlResult(html);
+});
+
+app.MapGet("/employees", () =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return TypedResults.Ok(employees);
+});
+
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null || employee.Id &lt; 0)
+    {
+        return Results.ValidationProblem(new Dictionary&lt;string, string[]&gt;
+        {
+            { "id", new[] { "Employee is not provided or is not valid." } }
+        });
+    }
+
+    EmployeesRepository.AddEmployee(employee);
+    return TypedResults.Created($"/employees/{employee.Id}", employee);
+
+}).WithParameterValidation();
+
+app.Run();</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span> Cú pháp <code>HtmlResult () =&gt; { ... }</code> (khai báo kiểu trả về tường minh trước lambda) là tính năng C# 10+ cho phép chỉ định kiểu trả về của lambda expression. Điều này giúp framework inference đúng kiểu response khi generate OpenAPI docs.</p>
+      </div>
+
+      <h3>Khi nào nên implement IResult?</h3>
+      <ul>
+        <li>Trả về <strong>HTML</strong> từ endpoint Minimal API (ví dụ trang chào mừng, health page).</li>
+        <li>Trả về <strong>CSV/XML</strong> với Content-Type tùy chỉnh.</li>
+        <li>Trả về <strong>file tải về</strong> với Content-Disposition header.</li>
+        <li>Cần thêm <strong>custom header</strong> vào mọi response của một loại kết quả.</li>
+        <li>Logic formatting phức tạp cần tái sử dụng qua nhiều endpoint.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Bài tập: CRUD cho Employees</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Assignment 5 — Implement CRUD for Employees</em></p>
+
+      <p>Đây là bài tập thực hành tổng hợp toàn bộ kiến thức của chương. Bạn cần hoàn thiện một Web API quản lý nhân viên với đầy đủ CRUD operations, sử dụng <code>TypedResults</code> cho happy path và <code>Results.ValidationProblem</code> cho mọi tình huống lỗi.</p>
+
+      <h3>Yêu cầu</h3>
+      <p>Triển khai các endpoint còn thiếu cho resource <code>/employees</code>:</p>
+
+      <table class="tbl">
+        <tr><th>Method</th><th>Route</th><th>Mô tả</th><th>Success Response</th></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/employees</code></td><td>Lấy danh sách tất cả nhân viên</td><td>200 + JSON array</td></tr>
+        <tr><td><span class="tag">GET</span></td><td><code>/employees/{id:int}</code></td><td>Lấy nhân viên theo ID</td><td>200 + JSON employee</td></tr>
+        <tr><td><span class="tag">POST</span></td><td><code>/employees</code></td><td>Thêm nhân viên mới</td><td>201 + JSON employee</td></tr>
+        <tr><td><span class="tag">PUT</span></td><td><code>/employees/{id:int}</code></td><td>Cập nhật nhân viên</td><td>204 No Content</td></tr>
+        <tr><td><span class="tag">DELETE</span></td><td><code>/employees/{id:int}</code></td><td>Xóa nhân viên</td><td>200 + JSON employee đã xóa</td></tr>
+      </table>
+
+      <h3>Yêu cầu kỹ thuật</h3>
+      <ul>
+        <li>Đăng ký <code>AddProblemDetails()</code>, dùng <code>UseStatusCodePages()</code> và <code>UseExceptionHandler()</code>.</li>
+        <li>Dùng <code>TypedResults</code> khi thành công (Ok, Created, NoContent).</li>
+        <li>Dùng <code>Results.ValidationProblem</code> khi có lỗi, kèm statusCode tương ứng (400 hoặc 404).</li>
+        <li>Dùng <code>WithParameterValidation()</code> cho endpoint POST.</li>
+        <li>Validate: ID trong route phải trùng ID trong body (cho PUT); employee phải tồn tại (cho GET by id, PUT, DELETE).</li>
+      </ul>
+
+      <h3>Model và Repository có sẵn</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/Employee.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.ComponentModel.DataAnnotations;
+
+namespace WebApi.Models
+{
+    public class Employee
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+
+        [Required]
+        public string Position { get; set; }
+
+        public double Salary { get; set; }
+
+        public Employee(int id, string name, string position, double salary)
+        {
+            Id = id; Name = name; Position = position; Salary = salary;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Models/EmployeesRepository.cs</span><span class="lang">csharp</span></div>
+        <pre><code>namespace WebApi.Models
+{
+    public static class EmployeesRepository
+    {
+        private static List&lt;Employee&gt; employees = new()
+        {
+            new(1, "John Doe", "Engineer", 60000),
+            new(2, "Jane Smith", "Manager", 75000),
+            new(3, "Sam Brown", "Technician", 50000)
+        };
+
+        public static List&lt;Employee&gt; GetEmployees() =&gt; employees;
+
+        public static Employee? GetEmployeeById(int id)
+            =&gt; employees.FirstOrDefault(x =&gt; x.Id == id);
+
+        public static void AddEmployee(Employee? employee)
+        {
+            if (employee is not null) employees.Add(employee);
+        }
+
+        public static bool UpdateEmployee(Employee? employee)
+        {
+            if (employee is null) return false;
+            var emp = employees.FirstOrDefault(x =&gt; x.Id == employee.Id);
+            if (emp is null) return false;
+            emp.Name = employee.Name;
+            emp.Position = employee.Position;
+            emp.Salary = employee.Salary;
+            return true;
+        }
+
+        public static bool DeleteEmployee(Employee? employee)
+        {
+            if (employee is null) return false;
+            return employees.Remove(employee);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span> Hãy cố tự làm trước khi xem đáp án ở bài 7. Thực hành là cách tốt nhất để nắm vững cú pháp và logic.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Đáp án: CRUD cho Employees</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Assignment 5 (Answer) — Implement CRUD for Employees</em></p>
+
+      <p>Dưới đây là giải pháp hoàn chỉnh với đầy đủ CRUD, chuẩn hóa lỗi, và custom <code>HtmlResult</code>. Đây là code thực từ project minh họa của khóa học.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApi.Models;
+using WebApi.Results;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddProblemDetails();
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler();
+}
+
+app.UseStatusCodePages();
+
+// GET / — trả về HTML (dùng custom IResult)
+app.MapGet("/", HtmlResult () =&gt;
+{
+    string html = "&lt;h2&gt;Welcome to our API&lt;/h2&gt; Our API is used to learn ASP.NET Core.";
+    return new HtmlResult(html);
+});
+
+// GET /employees — lấy tất cả nhân viên
+app.MapGet("/employees", () =&gt;
+{
+    var employees = EmployeesRepository.GetEmployees();
+    return TypedResults.Ok(employees);
+});
+
+// GET /employees/{id} — lấy nhân viên theo ID
+app.MapGet("/employees/{id:int}", (int id) =&gt;
+{
+    var employee = EmployeesRepository.GetEmployeeById(id);
+
+    return employee is not null
+        ? TypedResults.Ok(employee)
+        : Results.ValidationProblem(
+            new Dictionary&lt;string, string[]&gt;
+            {
+                { "id", new[] { $"Employee with the id {id} doesn't exist." } }
+            },
+            statusCode: 404);
+});
+
+// POST /employees — thêm nhân viên mới
+app.MapPost("/employees", (Employee employee) =&gt;
+{
+    if (employee is null || employee.Id &lt; 0)
+    {
+        return Results.ValidationProblem(
+            new Dictionary&lt;string, string[]&gt;
+            {
+                { "id", new[] { "Employee is not provided or is not valid." } }
+            },
+            statusCode: 400);
+    }
+
+    EmployeesRepository.AddEmployee(employee);
+    return TypedResults.Created($"/employees/{employee.Id}", employee);
+
+}).WithParameterValidation();
+
+// PUT /employees/{id} — cập nhật nhân viên
+app.MapPut("/employees/{id:int}", (int id, Employee employee) =&gt;
+{
+    if (id != employee.Id)
+    {
+        return Results.ValidationProblem(
+            new Dictionary&lt;string, string[]&gt;
+            {
+                { "id", new[] { "Employee id is not the same as route id." } }
+            },
+            statusCode: 400);
+    }
+
+    return EmployeesRepository.UpdateEmployee(employee)
+        ? TypedResults.NoContent()
+        : Results.ValidationProblem(
+            new Dictionary&lt;string, string[]&gt;
+            {
+                { "id", new[] { "Employee doesn't exist." } }
+            },
+            statusCode: 404);
+});
+
+// DELETE /employees/{id} — xóa nhân viên
+app.MapDelete("/employees/{id:int}", (int id) =&gt;
+{
+    var employee = EmployeesRepository.GetEmployeeById(id);
+
+    return EmployeesRepository.DeleteEmployee(employee)
+        ? TypedResults.Ok(employee)
+        : Results.ValidationProblem(
+            new Dictionary&lt;string, string[]&gt;
+            {
+                { "id", new[] { $"Employee with the id {id} doesn't exist." } }
+            },
+            statusCode: 404);
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Phân tích từng endpoint</h3>
+
+      <h4>GET /employees/{id:int}</h4>
+      <p>Dùng pattern matching ternary để chọn giữa 200 OK (tìm thấy) và 404 ValidationProblem (không tìm thấy). Lưu ý <code>statusCode: 404</code> được truyền vào <code>Results.ValidationProblem</code> để override status code mặc định 400.</p>
+
+      <h4>PUT /employees/{id:int}</h4>
+      <p>Xác minh ID trong route khớp với ID trong body trước khi cập nhật — đây là best practice quan trọng tránh cập nhật nhầm resource. <code>TypedResults.NoContent()</code> trả về 204 — đúng chuẩn REST cho update thành công không có body.</p>
+
+      <h4>DELETE /employees/{id:int}</h4>
+      <p>Trả về 200 OK kèm object employee đã xóa — hữu ích cho client biết chính xác resource nào được xóa. Một số API chọn 204 No Content cho DELETE; cả hai đều hợp lệ theo REST.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Results/HtmlResult.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using System.Text;
+
+namespace WebApi.Results
+{
+    public class HtmlResult : IResult
+    {
+        private readonly string html;
+
+        public HtmlResult(string html)
+        {
+            this.html = html;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.ContentType = "text/html";
+            httpContext.Response.ContentLength = Encoding.UTF8.GetByteCount(html);
+            await httpContext.Response.WriteAsync(html);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Tổng kết chương</h3>
+      <p>Chương này đã đi từ cách trả về đơn giản nhất (string/object) đến bức tranh hoàn chỉnh về producing results trong Minimal API:</p>
+      <ol class="steps">
+        <li><strong>Trả về string/object</strong> → tự động 200 OK (text hoặc JSON).</li>
+        <li><strong>IResult interface</strong> → nền tảng của mọi kết quả có thể kiểm soát status code.</li>
+        <li><strong>Results/TypedResults helpers</strong> → bộ toolkit phong phú: Ok, Created, BadRequest, NotFound, NoContent, Redirect, File, Json...</li>
+        <li><strong>Results&lt;T1,T2&gt;</strong> → strongly-typed union cho handler có nhiều kiểu trả về.</li>
+        <li><strong>Problem Details (RFC 7807)</strong> → format JSON chuẩn cho mọi lỗi API.</li>
+        <li><strong>AddProblemDetails + UseStatusCodePages + UseExceptionHandler</strong> → đảm bảo 100% response lỗi nhất quán.</li>
+        <li><strong>Custom IResult</strong> → tùy biến response cho nhu cầu đặc thù (HTML, CSV, custom headers...).</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Best practice tóm tắt:</strong> dùng <code>TypedResults</code> cho happy path, <code>Results.ValidationProblem</code> cho lỗi input, đăng ký <code>AddProblemDetails</code> và <code>UseStatusCodePages</code> để phủ toàn bộ các trường hợp còn lại.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-05.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">05 · Minimal API — Model Binding &amp; Validation</div>
+      </a>
+      <a class="next" href="lesson-07.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">07 · Tổ chức Code &amp; Dependency Injection</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

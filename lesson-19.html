@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 19 — MVC &amp; Razor Pages — Filter Pipeline | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 19 — MVC &amp; Razor Pages — Filter Pipeline</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Filter Pipeline là gì và tại sao cần dùng</a></li>
+      <li><a href="#s2">2. Tạo và áp dụng filter</a></li>
+      <li><a href="#s3">3. Phạm vi áp dụng filter (Filter Scopes)</a></li>
+      <li><a href="#s4">4. Thứ tự thực thi (Order of Execution)</a></li>
+      <li><a href="#s5">5. Authorization Filter</a></li>
+      <li><a href="#s6">6. Resource Filter</a></li>
+      <li><a href="#s7">7. Exception Filter</a></li>
+      <li><a href="#s8">8. Action Filter</a></li>
+      <li><a href="#s9">9. Result Filter</a></li>
+      <li><a href="#s10">10. Page Filter</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 19</span>
+      <h1>MVC &amp; Razor Pages — Filter Pipeline</h1>
+      <p class="lead">Tìm hiểu toàn diện về filter pipeline trong MVC và Razor Pages: các loại filter — authorization, resource, exception, action, result và page filter — cùng cách khai báo scope và kiểm soát thứ tự thực thi.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Filter Pipeline là gì và tại sao cần dùng</h2>
+      <p class="subvideo-meta">Bài 1 · <em>What and Why Filter Pipeline for MVC and Razor Pages</em></p>
+
+      <p>Ở chương trước chúng ta đã tìm hiểu filter pipeline cho Minimal API — đó là phần mở rộng của middleware pipeline chạy bên trong endpoint middleware, <em>trước</em> khi handler thực sự được thực thi. Filter pipeline cho MVC và Razor Pages có tư tưởng tương tự nhưng phong phú hơn nhiều bởi MVC là công nghệ lâu đời, có hệ sinh thái rất rộng.</p>
+
+      <h3>Vị trí trong pipeline tổng thể</h3>
+      <p>Khi một request đến, nó đi qua chuỗi middleware (Routing → Endpoint). Bên trong Endpoint middleware, với MVC thì filter pipeline chạy <strong>xung quanh action method</strong>; với Razor Pages thì chạy xung quanh <strong>page handler</strong>. Sau khi action/handler kết thúc, filter pipeline tiếp tục phần "sau" theo chiều ngược lại trước khi response được trả về.</p>
+
+      <h3>Năm loại filter trong MVC</h3>
+      <table class="tbl">
+        <tr><th>Loại filter</th><th>Interface</th><th>Mô tả ngắn</th></tr>
+        <tr><td><strong>Authorization</strong></td><td><code>IAuthorizationFilter</code></td><td>Chạy đầu tiên, kiểm tra xem request có được phép không.</td></tr>
+        <tr><td><strong>Resource</strong></td><td><code>IResourceFilter</code></td><td>Chạy sau authorization, trước model binding — dùng để short-circuit sớm.</td></tr>
+        <tr><td><strong>Exception</strong></td><td><code>IExceptionFilter</code></td><td>Bắt ngoại lệ xảy ra trong action/page handler.</td></tr>
+        <tr><td><strong>Action</strong></td><td><code>IActionFilter</code></td><td>Chạy ngay trước và sau khi action method thực thi.</td></tr>
+        <tr><td><strong>Result</strong></td><td><code>IResultFilter</code></td><td>Chạy trước và sau khi IActionResult được thực thi (render).</td></tr>
+      </table>
+
+      <p>Razor Pages không có Action Filter; thay vào đó có <strong>Page Filter</strong> (<code>IPageFilter</code>) hoạt động tương tự nhưng được thiết kế riêng cho page model.</p>
+
+      <h3>Thứ tự thực thi tổng quát</h3>
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>
+          <strong>Request đi vào:</strong> Authorization → Resource → (Model Binding) → Exception → Action (Before) → action method → Action (After) → Result (Before) → render → Result (After)<br>
+          <strong>Response đi ra:</strong> theo chiều ngược lại của các bước "After".
+        </p>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Tại sao cần filter pipeline?</strong> Filter cho phép tái sử dụng logic xuyên suốt nhiều action/page (authorization, validation, logging, caching, xử lý lỗi) mà <em>không</em> phải chép code vào từng method. Đây là cách áp dụng nguyên tắc DRY (Don't Repeat Yourself) trong tầng presentation.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Tạo và áp dụng filter</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Create and Apply a Filter</em></p>
+
+      <p>Mỗi filter trong MVC là một class implement một trong các interface filter. Để dùng filter như một <em>attribute</em>, class đó còn kế thừa thêm <code>Attribute</code>. Bài này dùng <code>IResourceFilter</code> làm ví dụ vì nó "trung tính" — không có mục đích chuyên biệt như authorization hay exception.</p>
+
+      <h3>Bước 1: Implement interface</h3>
+      <p>Tạo thư mục <code>Filters/</code> trong project và thêm class sau:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/WriteToConsoleResourceFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.Filters;
+
+namespace WebApp.Filters
+{
+    public class WriteToConsoleResourceFilter : Attribute, IResourceFilter
+    {
+        public void OnResourceExecuting(ResourceExecutingContext context)
+        {
+            Console.WriteLine($"Executing {context.ActionDescriptor.DisplayName}");
+        }
+
+        public void OnResourceExecuted(ResourceExecutedContext context)
+        {
+            Console.WriteLine($"Executed {context.ActionDescriptor.DisplayName}");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Sync vs Async:</strong> <code>IResourceFilter</code> có hai phương thức đồng bộ. Nếu cần gọi API async bên trong filter, hãy implement <code>IAsyncResourceFilter</code> thay thế với phương thức <code>OnResourceExecutionAsync(ResourceExecutingContext ctx, ResourceExecutionDelegate next)</code>.</p>
+      </div>
+
+      <h3>Bước 2: Áp dụng lên action</h3>
+      <p>Vì class kế thừa <code>Attribute</code>, ta dùng nó như một attribute C# bình thường:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApp.Filters;
+
+public class DepartmentsController : Controller
+{
+    [HttpGet]
+    [WriteToConsoleResourceFilter]   // áp dụng lên action
+    public IActionResult Index()
+    {
+        return View();
+    }
+}</code></pre>
+      </div>
+
+      <h3>Các cách implement khác</h3>
+      <table class="tbl">
+        <tr><th>Cách</th><th>Ghi chú</th></tr>
+        <tr><td>Implement interface trực tiếp (<code>IResourceFilter</code>)</td><td>Sync — phù hợp khi không có I/O async</td></tr>
+        <tr><td>Implement async interface (<code>IAsyncResourceFilter</code>)</td><td>Async — phù hợp khi cần gọi DB, HTTP…</td></tr>
+        <tr><td>Kế thừa base class (<code>ResourceFilterAttribute</code>)</td><td>Đã sẵn thuộc tính <code>Attribute</code>, override các phương thức cần</td></tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Phạm vi áp dụng filter (Filter Scopes)</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Filter Scopes</em></p>
+
+      <p>Một filter có thể được áp dụng ở nhiều "cấp độ" (scope) khác nhau. Scope quyết định filter sẽ áp dụng cho bao nhiêu action/page.</p>
+
+      <h3>Ba scope cho MVC</h3>
+      <ol class="steps">
+        <li><strong>Action level</strong> — đặt attribute trên action method: chỉ áp dụng cho action đó.</li>
+        <li><strong>Controller level</strong> — đặt attribute trên class controller: áp dụng cho mọi action trong controller.</li>
+        <li><strong>Global</strong> — đăng ký trong <code>Program.cs</code>: áp dụng cho <em>toàn bộ</em> action trong ứng dụng.</li>
+      </ol>
+
+      <h3>Đăng ký filter toàn cục</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Program.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using WebApp.Filters;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages().AddMvcOptions(options =&gt;
+{
+    options.Filters.Add&lt;WriteToConsoleResourceFilter&gt;();
+});
+
+builder.Services.AddSingleton&lt;IDepartmentsRepository, DepartmentsRepository&gt;();
+builder.Services.AddSingleton&lt;IEmployeesRepository, EmployeesRepository&gt;();
+
+var app = builder.Build();
+
+app.UseRouting();
+app.UseEndpoints(endpoints =&gt;
+{
+    endpoints.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}");
+    endpoints.MapRazorPages();
+});
+
+app.Run();</code></pre>
+      </div>
+
+      <h3>Hai scope cho Razor Pages</h3>
+      <p>Razor Pages <strong>không có</strong> Action-level scope (bạn không thể đặt filter trực tiếp lên một handler method riêng lẻ — Visual Studio sẽ gạch chân cảnh báo). Chỉ có hai scope:</p>
+      <ul>
+        <li><strong>Page level</strong> — đặt attribute trên class <code>PageModel</code>.</li>
+        <li><strong>Global</strong> — đăng ký trong <code>AddMvcOptions</code> tương tự MVC.</li>
+      </ul>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>// Filter áp dụng ở page level
+[WriteToConsoleResourceFilter]
+public class EditModel : PageModel
+{
+    public void OnGet(int id) { /* ... */ }
+    public IActionResult OnPost() { /* ... */ }
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span> Đặt attribute của MVC filter (<code>IActionFilter</code>) lên Razor Page handler sẽ không có tác dụng — bạn cần dùng <code>IPageFilter</code> hoặc filter có thể áp dụng cả hai (như <code>IResourceFilter</code>, <code>IAuthorizationFilter</code>).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Thứ tự thực thi (Order of Execution)</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Order of Execution</em></p>
+
+      <p>Khi cùng một loại filter được áp dụng ở nhiều scope (global, controller, action), thứ tự thực thi mặc định như sau:</p>
+
+      <table class="tbl">
+        <tr><th>Pha</th><th>Thứ tự (mặc định)</th></tr>
+        <tr><td>Trước action (<em>Executing</em>)</td><td>Global → Controller → Action</td></tr>
+        <tr><td>Sau action (<em>Executed</em>)</td><td>Action → Controller → Global</td></tr>
+      </table>
+
+      <p>Đây là mô hình "bao bọc" (onion): filter ngoài cùng (Global) bọc controller, controller bọc action. Phần <em>Executing</em> đi từ ngoài vào trong; phần <em>Executed</em> đi từ trong ra ngoài.</p>
+
+      <h3>Ghi đè thứ tự bằng <code>IOrderedFilter</code></h3>
+      <p>Implement thêm <code>IOrderedFilter</code> và thuộc tính <code>Order</code> (số nhỏ hơn = chạy <em>trước</em>) để điều chỉnh thứ tự:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/WriteToConsoleResourceFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.Filters;
+
+public class WriteToConsoleResourceFilter : Attribute, IResourceFilter, IOrderedFilter
+{
+    public string? Description { get; set; }
+
+    // IOrderedFilter — số nhỏ hơn chạy trước
+    public int Order { get; set; }
+
+    public WriteToConsoleResourceFilter()
+    {
+        this.Description = "Global"; // giá trị mặc định
+    }
+
+    public void OnResourceExecuting(ResourceExecutingContext context)
+    {
+        Console.WriteLine($"Executing {Description} - {context.ActionDescriptor.DisplayName}");
+    }
+
+    public void OnResourceExecuted(ResourceExecutedContext context)
+    {
+        Console.WriteLine($"Executed {Description} - {context.ActionDescriptor.DisplayName}");
+    }
+}</code></pre>
+      </div>
+
+      <h3>Áp dụng cùng filter ở nhiều cấp với Order khác nhau</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[WriteToConsoleResourceFilter(Description = "Departments Controller")]
+public class DepartmentsController : Controller
+{
+    [HttpGet]
+    [WriteToConsoleResourceFilter(Description = "Index Method", Order = -1)]
+    public IActionResult Index()
+    {
+        return View();
+    }
+}</code></pre>
+      </div>
+
+      <p>Với cấu hình trên, filter có <code>Order = -1</code> (action level) sẽ chạy <em>trước</em> filter của controller và global trong pha Executing, dù thông thường action chạy sau cùng.</p>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Khi không cần thứ tự đặc biệt, hãy để mặc định (không implement <code>IOrderedFilter</code>). Chỉ dùng <code>Order</code> khi có yêu cầu cụ thể về ưu tiên.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Authorization Filter</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Authorization Filter</em></p>
+
+      <p><strong>Authorization filter</strong> là loại filter chạy <em>đầu tiên</em> trong pipeline — trước cả model binding. Nếu kiểm tra thất bại, nó short-circuit toàn bộ pipeline: response được trả về ngay mà không thực thi action hay các filter khác.</p>
+
+      <h3>Interface</h3>
+      <p>Implement <code>IAuthorizationFilter</code> với một phương thức duy nhất <code>OnAuthorization(AuthorizationFilterContext context)</code>. Để short-circuit, gán <code>context.Result</code>.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/SpecialAuthorizationFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+
+namespace WebApp.Filters
+{
+    public class SpecialAuthorizationFilter : Attribute, IAuthorizationFilter
+    {
+        public void OnAuthorization(AuthorizationFilterContext context)
+        {
+            var user = context.HttpContext.User;
+
+            if (user is null || user.Identity is null || !user.Identity.IsAuthenticated)
+            {
+                context.Result = new UnauthorizedResult();
+                return;
+            }
+
+            if (!user.HasClaim(c =&gt; c.Type == "CustomClaim" &amp;&amp; c.Value == "CustomValue"))
+            {
+                context.Result = new ForbidResult();
+            }
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Khi nào dùng Authorization Filter?</h3>
+      <p>Trong thực tế, ASP.NET Core có hệ thống Identity và <strong>policy-based authorization</strong> rất hoàn chỉnh. Bạn nên ưu tiên tạo policy bằng <code>[Authorize(Policy = "...")]</code> thay vì tự viết authorization filter.</p>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Khuyến nghị:</strong> Chỉ dùng <code>IAuthorizationFilter</code> khi có <em>yêu cầu đặc biệt</em> mà policy-based authorization không đáp ứng được. Với đa số trường hợp thông thường, hệ thống Authorization middleware + policy là lựa chọn tốt hơn.</p>
+      </div>
+
+      <h3>Short-circuit trong Authorization Filter</h3>
+      <p>Không giống các filter khác, authorization filter không gọi <code>next()</code>. Thay vào đó, framework tự quyết định tiếp tục hay không dựa trên việc <code>context.Result</code> có được gán hay không:</p>
+      <ul>
+        <li><code>context.Result</code> <strong>không được gán</strong> → request tiếp tục qua pipeline.</li>
+        <li><code>context.Result</code> <strong>được gán</strong> → pipeline bị short-circuit, response trả về ngay.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Resource Filter</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Resource Filter</em></p>
+
+      <p><strong>Resource filter</strong> chạy ngay sau authorization filter — vẫn rất sớm trong pipeline, trước model binding. Điều này có hai lợi ích chính:</p>
+      <ul>
+        <li><strong>Short-circuit sớm:</strong> nếu điều kiện không thỏa, từ chối request mà không tốn chi phí model binding, action execution.</li>
+        <li><strong>Caching đầu ra (output caching thủ công):</strong> trong <code>OnResourceExecuting</code> kiểm tra cache; nếu có thì gán <code>context.Result</code> ngay; trong <code>OnResourceExecuted</code> lưu kết quả vào cache.</li>
+      </ul>
+
+      <h3>Ví dụ thực tế: EndpointExpiresFilter</h3>
+      <p>Filter này cho phép đặt ngày hết hạn cho một endpoint. Khi quá hạn, trả về <code>400 Bad Request</code> mà không cần thực thi action:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EndpointExpiresFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+
+namespace WebApp.Filters
+{
+    public class EndpointExpiresFilter : Attribute, IResourceFilter
+    {
+        public string? ExpiryDate { get; set; }
+
+        public void OnResourceExecuting(ResourceExecutingContext context)
+        {
+            if (DateTime.TryParse(ExpiryDate, out DateTime expiryDate))
+            {
+                if (DateTime.Now &gt; expiryDate)
+                {
+                    context.Result = new BadRequestResult(); // short-circuit
+                }
+            }
+        }
+
+        public void OnResourceExecuted(ResourceExecutedContext context)
+        {
+            // chạy sau khi action hoàn thành — có thể dùng để cache kết quả
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Áp dụng lên action</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+[EndpointExpiresFilter(ExpiryDate = "2028-01-18")]
+public IActionResult Details(int id)
+{
+    var department = departmentsRepository.GetDepartmentById(id);
+    return View(department);
+}</code></pre>
+      </div>
+
+      <h3>Filter tích hợp sẵn: ConsumesAttribute</h3>
+      <p>Một ví dụ resource filter có sẵn trong ASP.NET Core là <code>[Consumes("application/json")]</code>. Nó implement <code>IResourceFilter</code> và short-circuit nếu <code>Content-Type</code> của request không khớp với loại MIME được khai báo.</p>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><code>IAsyncResourceFilter</code> có một phương thức duy nhất: <code>OnResourceExecutionAsync(ResourceExecutingContext ctx, ResourceExecutionDelegate next)</code>. Gọi <code>await next()</code> để tiếp tục pipeline; không gọi thì pipeline bị short-circuit.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Exception Filter</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Exception Filter</em></p>
+
+      <p><strong>Exception filter</strong> bắt các ngoại lệ chưa được xử lý xảy ra trong quá trình model binding, action execution hoặc result execution. Nó chạy <em>bên trong</em> filter pipeline của MVC/Razor Pages.</p>
+
+      <h3>So sánh với Exception Handling Middleware</h3>
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>Exception Filter</th><th>Exception Middleware</th></tr>
+        <tr><td>Phạm vi</td><td>Chỉ MVC / Razor Pages</td><td>Toàn bộ request pipeline</td></tr>
+        <tr><td>Thông tin MVC</td><td>Biết action/page nào gây lỗi</td><td>Không có</td></tr>
+        <tr><td>Áp dụng chọn lọc</td><td>Có (action, controller, global)</td><td>Không (toàn bộ)</td></tr>
+        <tr><td>Phù hợp khi nào</td><td>Cần xử lý khác nhau giữa API endpoint và web UI; cần truy cập MVC context</td><td>Xử lý lỗi chung cho mọi request</td></tr>
+      </table>
+
+      <h3>Implement bằng ExceptionFilterAttribute</h3>
+      <p>Cách đơn giản nhất là kế thừa <code>ExceptionFilterAttribute</code> và override <code>OnException</code>:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/HandleExceptionsFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+
+namespace WebApp.Filters
+{
+    public class HandleExceptionsFilter : ExceptionFilterAttribute
+    {
+        public override void OnException(ExceptionContext context)
+        {
+            base.OnException(context);
+
+            var error = new ProblemDetails
+            {
+                Title = "An error occurred",
+                Detail = context.Exception.ToString(),
+                Status = 500
+            };
+
+            context.Result = new ObjectResult(error)
+            {
+                StatusCode = 500
+            };
+
+            // đánh dấu đã xử lý — tránh lan lên middleware bên ngoài
+            context.ExceptionHandled = true;
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Áp dụng lên action API</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+[HandleExceptionsFilter]
+public IActionResult GetDepartments()
+{
+    // nếu có ngoại lệ, HandleExceptionsFilter sẽ bắt và trả về ProblemDetails
+    var departments = departmentsRepository.GetDepartments();
+    return Json(departments);
+}</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Tình huống điển hình:</strong> Ứng dụng vừa phục vụ HTML (MVC views) vừa có Web API endpoint. Exception filter cho phép API endpoint trả về JSON <code>ProblemDetails</code> trong khi view endpoint vẫn redirect đến trang lỗi HTML — tất cả chọn lọc theo phạm vi filter.</p>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Nếu exception không được đánh dấu <code>ExceptionHandled = true</code>, nó sẽ tiếp tục lan ra ngoài và middleware xử lý lỗi (nếu có) sẽ bắt nó.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> Action Filter</h2>
+      <p class="subvideo-meta">Bài 8 · <em>Action Filter</em></p>
+
+      <p><strong>Action filter</strong> chạy <em>hai lần</em> — trước và sau khi action method được thực thi. Vị trí này cho phép nó:</p>
+      <ul>
+        <li>Truy cập các <strong>argument</strong> đã được model binding tạo ra (<code>ActionExecutingContext.ActionArguments</code>).</li>
+        <li>Truy cập <strong>kết quả</strong> của action (<code>ActionExecutedContext.Result</code>) và thay thế/sửa đổi trước khi result filter chạy.</li>
+        <li><strong>Short-circuit</strong> bằng cách gán <code>context.Result</code> trong <code>OnActionExecuting</code>.</li>
+      </ul>
+
+      <h3>Ví dụ 1: EnsureDepartmentExistsFilter</h3>
+      <p>Filter kiểm tra department có tồn tại không trước khi action chạy. Dùng <code>ActionFilterAttribute</code> làm base class cho tiện:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EnsureDepartmentExistsFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using WebApp.Helpers;
+using WebApp.Models;
+
+namespace WebApp.Filters
+{
+    public class EnsureDepartmentExistsFilter : ActionFilterAttribute
+    {
+        public override void OnActionExecuting(ActionExecutingContext context)
+        {
+            base.OnActionExecuting(context);
+
+            var departmentId = (int)context.ActionArguments["id"];
+
+            var repo = context.HttpContext.RequestServices
+                              .GetService&lt;IDepartmentsRepository&gt;();
+
+            if (!repo.DepartmentExists(departmentId))
+            {
+                context.ModelState.AddModelError("id", "Department not found.");
+
+                var result = new ViewResult { ViewName = "Error" };
+                var controller = context.Controller as Controller;
+                result.ViewData = controller.ViewData;
+                result.ViewData.Model = ModelStateHelper.GetErrors(context.ModelState);
+
+                context.Result = result; // short-circuit
+            }
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Ví dụ 2: EnsureValidModelStateFilter</h3>
+      <p>Filter trích xuất logic kiểm tra ModelState ra khỏi action để có thể tái sử dụng:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EnsureValidModelStateFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using WebApp.Helpers;
+
+namespace WebApp.Filters
+{
+    public class EnsureValidModelStateFilter : ActionFilterAttribute
+    {
+        public override void OnActionExecuting(ActionExecutingContext context)
+        {
+            base.OnActionExecuting(context);
+
+            if (!context.ModelState.IsValid)
+            {
+                var result = new ViewResult { ViewName = "Error" };
+                var controller = context.Controller as Controller;
+                result.ViewData = controller.ViewData;
+                result.ViewData.Model = ModelStateHelper.GetErrors(context.ModelState);
+
+                context.Result = result; // short-circuit nếu model không hợp lệ
+            }
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Áp dụng các filter lên controller</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs (trích)</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+[EndpointExpiresFilter(ExpiryDate = "2028-01-18")]
+[EnsureDepartmentExistsFilter]
+public IActionResult Details(int id)
+{
+    var department = departmentsRepository.GetDepartmentById(id);
+    return View(department);
+}
+
+[HttpPost]
+[EnsureValidModelStateFilter]
+public IActionResult Edit(Department department)
+{
+    departmentsRepository.UpdateDepartment(department);
+    return RedirectToAction(nameof(Index));
+}
+
+[HttpPost]
+[EnsureValidModelStateFilter]
+public IActionResult Create(Department department)
+{
+    departmentsRepository.AddDepartment(department);
+    return RedirectToAction(nameof(Index));
+}</code></pre>
+      </div>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Use case phổ biến nhất:</strong> Tách logic validation (kiểm tra tồn tại resource, kiểm tra ModelState) ra khỏi action method giúp action method chỉ chứa business logic thuần túy — code sạch hơn, dễ test hơn.</p>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Để inject service vào filter, dùng <code>context.HttpContext.RequestServices.GetService&lt;T&gt;()</code> hoặc đăng ký filter qua DI (<code>services.AddScoped&lt;MyFilter&gt;()</code> và dùng <code>[TypeFilter(typeof(MyFilter))]</code> / <code>[ServiceFilter(typeof(MyFilter))]</code>).</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Result Filter</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Result Filter</em></p>
+
+      <p><strong>Result filter</strong> chạy <em>trước và sau</em> khi <code>IActionResult</code> được thực thi (tức là trước và sau khi Razor view được render, hoặc JSON được serialize và ghi vào response). Đây là loại filter cuối cùng trong pipeline trước khi response đến tay client.</p>
+
+      <p>Mục đích chính là <strong>sửa đổi response</strong> ngay trước khi nó được ghi ra — ví dụ: thêm HTTP header, thay đổi Content-Type, ghi log kết quả cuối cùng.</p>
+
+      <h3>Interface</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/AddHeaderFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.Filters;
+
+namespace WebApp.Filters
+{
+    public class AddHeaderFilter : Attribute, IResultFilter
+    {
+        public string? Name { get; set; }
+        public string? Value { get; set; }
+
+        public void OnResultExecuting(ResultExecutingContext context)
+        {
+            // chạy TRƯỚC khi result được render
+            if (context.HttpContext.Response != null
+                &amp;&amp; this.Name is not null
+                &amp;&amp; this.Value is not null
+                &amp;&amp; !context.HttpContext.Response.Headers.ContainsKey(this.Name))
+            {
+                context.HttpContext.Response.Headers.Add(Name, Value);
+            }
+        }
+
+        public void OnResultExecuted(ResultExecutedContext context)
+        {
+            // chạy SAU khi result được render
+            // response đã ghi — không thể thay đổi body nữa
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Áp dụng</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs (trích)</span><span class="lang">csharp</span></div>
+        <pre><code>[HttpGet]
+[AddHeaderFilter(Name = "X-Custom-Header", Value = "MyValue")]
+public IActionResult Index()
+{
+    return View();
+}</code></pre>
+      </div>
+
+      <h3>Filter tích hợp sẵn: ProducesAttribute</h3>
+      <p><code>[Produces("application/json")]</code> là một result filter tích hợp sẵn. Nó implement <code>IResultFilter</code> và trong <code>OnResultExecuting</code> sẽ thiết lập <code>Content-Type</code> của response theo loại MIME được khai báo, đồng thời lọc bỏ các formatter không phù hợp.</p>
+
+      <table class="tbl">
+        <tr><th>Phương thức</th><th>Thời điểm</th><th>Dùng để</th></tr>
+        <tr><td><code>OnResultExecuting</code></td><td>Trước khi render result</td><td>Thêm header, thay đổi result, short-circuit</td></tr>
+        <tr><td><code>OnResultExecuted</code></td><td>Sau khi render xong</td><td>Log, dọn dẹp — không thể thay đổi body đã ghi</td></tr>
+      </table>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Nếu muốn short-circuit trong result filter (không render kết quả), gán <code>context.Cancel = true</code> trong <code>OnResultExecuting</code>. Tuy nhiên dùng cẩn thận — client có thể nhận response rỗng.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Page Filter</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Page Filter</em></p>
+
+      <p><strong>Page filter</strong> là phiên bản của action filter dành riêng cho Razor Pages. Nó implement <code>IPageFilter</code> và được gọi <strong>ba lần</strong> — nhiều hơn action filter một lần:</p>
+
+      <ol class="steps">
+        <li><strong><code>OnPageHandlerSelected</code></strong> — sau khi page handler được chọn (ví dụ: <code>OnGet</code>, <code>OnPost</code>), <em>trước</em> model binding. Ít dùng trong thực tế.</li>
+        <li><strong><code>OnPageHandlerExecuting</code></strong> — sau model binding, <em>trước</em> khi handler method thực thi. Đây là nơi phổ biến nhất để đặt validation logic.</li>
+        <li><strong><code>OnPageHandlerExecuted</code></strong> — sau khi handler method thực thi xong.</li>
+      </ol>
+
+      <h3>Ví dụ 1: EnsureValidModelStatePageFilter</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EnsureValidModelStatePageFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using WebApp.Helpers;
+
+namespace WebApp.Filters
+{
+    public class EnsureValidModelStatePageFilter : Attribute, IPageFilter
+    {
+        public void OnPageHandlerSelected(PageHandlerSelectedContext context)
+        {
+            // thường để trống
+        }
+
+        public void OnPageHandlerExecuting(PageHandlerExecutingContext context)
+        {
+            if (!context.ModelState.IsValid)
+            {
+                var errors = ModelStateHelper.GetErrors(context.ModelState);
+                context.Result = new RedirectToPageResult("/Error", new { errors });
+            }
+        }
+
+        public void OnPageHandlerExecuted(PageHandlerExecutedContext context)
+        {
+            // thường để trống
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Ví dụ 2: EnsureEmployeeExistsPageFilter</h3>
+      <p>Filter kiểm tra employee tồn tại. Lưu ý cách bỏ qua handler <code>OnGet</code> — ta không muốn kiểm tra khi lần đầu load trang:</p>
+      <div class="code">
+        <div class="code-head"><span class="fname">Filters/EnsureEmployeeExistsPageFilter.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using WebApp.Models;
+using WebApp.Pages.Employees;
+
+namespace WebApp.Filters
+{
+    public class EnsureEmployeeExistsPageFilter : Attribute, IPageFilter
+    {
+        public void OnPageHandlerSelected(PageHandlerSelectedContext context) { }
+
+        public void OnPageHandlerExecuting(PageHandlerExecutingContext context)
+        {
+            // bỏ qua khi là GET (chỉ load form, chưa có dữ liệu submit)
+            if (context.HandlerMethod is not null
+                &amp;&amp; context.HandlerMethod.MethodInfo.Name == "OnGet") return;
+
+            var repo = context.HttpContext.RequestServices
+                              .GetService&lt;IEmployeesRepository&gt;();
+
+            object? employeeId;
+            if (context.HandlerArguments.ContainsKey("id"))
+                employeeId = context.HandlerArguments["id"];
+            else
+                employeeId = ((EditModel)context.HandlerInstance).EmployeeViewModel.Employee.Id;
+
+            if (!repo.EmployeeExists((int)employeeId))
+            {
+                context.ModelState.AddModelError("id", "Employee not found.");
+                var errors = ModelStateHelper.GetErrors(context.ModelState);
+                context.Result = new RedirectToPageResult("/Error", new { errors });
+            }
+        }
+
+        public void OnPageHandlerExecuted(PageHandlerExecutedContext context) { }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Áp dụng lên PageModel</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Pages/Employees/Edit.cshtml.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc.RazorPages;
+using WebApp.Filters;
+
+namespace WebApp.Pages.Employees
+{
+    [EnsureValidModelStatePageFilter]
+    [EnsureEmployeeExistsPageFilter]
+    public class EditModel : PageModel
+    {
+        [BindProperty]
+        public EmployeeViewModel? EmployeeViewModel { get; set; }
+
+        public void OnGet(int id)
+        {
+            // load dữ liệu — EnsureEmployeeExistsPageFilter bỏ qua OnGet
+            this.EmployeeViewModel = new EmployeeViewModel
+            {
+                Employee = employeesRepository.GetEmployeeById(id),
+                Departments = departmentsRepository.GetDepartments()
+            };
+        }
+
+        public IActionResult OnPost()
+        {
+            // EnsureValidModelStatePageFilter kiểm tra ModelState trước
+            // EnsureEmployeeExistsPageFilter kiểm tra employee tồn tại trước
+            employeesRepository.UpdateEmployee(EmployeeViewModel.Employee);
+            return RedirectToPage("Index");
+        }
+
+        public IActionResult OnPostDeleteEmplopyee(int id)
+        {
+            var employee = employeesRepository.GetEmployeeById(id);
+            employeesRepository.DeleteEmployee(employee);
+            return RedirectToPage("Index");
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>So sánh Page Filter vs Action Filter</h3>
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>Action Filter (<code>IActionFilter</code>)</th><th>Page Filter (<code>IPageFilter</code>)</th></tr>
+        <tr><td>Dùng cho</td><td>MVC Controller action</td><td>Razor Pages page handler</td></tr>
+        <tr><td>Số lần gọi</td><td>2 (Executing / Executed)</td><td>3 (Selected / Executing / Executed)</td></tr>
+        <tr><td>Truy cập handler arguments</td><td><code>ActionExecutingContext.ActionArguments</code></td><td><code>PageHandlerExecutingContext.HandlerArguments</code></td></tr>
+        <tr><td>Có thể áp dụng chéo không?</td><td>Không áp dụng được cho Razor Pages</td><td>Không áp dụng được cho MVC Controller</td></tr>
+      </table>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Tóm tắt chương:</strong> Filter pipeline MVC/Razor Pages cung cấp 5 loại hook (Authorization → Resource → Exception → Action/Page → Result) để inject logic tái sử dụng ở đúng thời điểm cần thiết. Hiểu scope và thứ tự thực thi là chìa khóa để thiết kế filter hiệu quả.</p>
+      </div>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-18.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">18 · Minimal API — Filter Pipeline</div>
+      </a>
+      <a class="next" href="lesson-20.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">20 · Consume API</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

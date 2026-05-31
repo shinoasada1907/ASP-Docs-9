@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chương 13 — MVC: Componentization &amp; Interactivity | ASP.NET Core .NET 9</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="menu-toggle" aria-label="Mở menu">☰</button>
+  <div class="logo">.N</div>
+  <div class="title">ASP.NET Core .NET 9 <small>Chương 13 — MVC: Componentization &amp; Interactivity</small></div>
+  <div class="spacer"></div>
+  <a class="home-link" href="index.html">← Trang chủ</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Trong chương này</h2>
+    <ul class="toc">
+      <li><a href="#s1">1. Lý thuyết Componentization</a></li>
+      <li><a href="#s2">2. Component hoá bằng Partial View</a></li>
+      <li><a href="#s3">3. Truyền dữ liệu vào Partial View</a></li>
+      <li><a href="#s4">4. Bài tập 9 — Component hoá danh sách</a></li>
+      <li><a href="#s5">5. Bài tập 9 (lời giải) — Component hoá danh sách</a></li>
+      <li><a href="#s6">6. Kết hợp Partial View &amp; JavaScript (Lý thuyết)</a></li>
+      <li><a href="#s7">7. Kết hợp Partial View &amp; JavaScript (Triển khai)</a></li>
+      <li><a href="#s8">8. View Component vs Partial View</a></li>
+      <li><a href="#s9">9. Các thành phần cốt lõi của View Component</a></li>
+      <li><a href="#s10">10. Truyền tham số vào View Component</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <div class="lesson-head">
+      <span class="eyebrow">CHƯƠNG 13</span>
+      <h1>MVC — Componentization &amp; Interactivity</h1>
+      <p class="lead">Tái sử dụng giao diện bằng Partial View và View Component, kết hợp JavaScript để tạo tương tác động mà không cần tải lại toàn bộ trang.</p>
+    </div>
+
+    <!-- ============ SECTION 1 ============ -->
+    <section class="section" id="s1">
+      <h2><span class="num">1</span> Lý thuyết Componentization</h2>
+      <p class="subvideo-meta">Bài 1 · <em>Componentization theory</em></p>
+
+      <p><strong>Componentization</strong> (tách giao diện thành các thành phần) là kỹ thuật chia nhỏ một trang web lớn thành những mảnh
+        độc lập, mỗi mảnh đảm nhận một trách nhiệm riêng. Mặc dù tài liệu liệt kê nhiều lợi ích (maintainability, scalability, reusability…),
+        hai lợi ích quan trọng nhất trong thực tế là:</p>
+
+      <table class="tbl">
+        <tr><th>Lợi ích</th><th>Ý nghĩa</th></tr>
+        <tr>
+          <td><strong>Separation of Concerns</strong></td>
+          <td>Mỗi thành phần chỉ làm một việc. Khi cần sửa phần navbar, bạn chỉ mở file navbar, không phải lùng sục trong một file layout khổng lồ.</td>
+        </tr>
+        <tr>
+          <td><strong>Reusability</strong></td>
+          <td>Một component được viết một lần, dùng lại ở nhiều nơi. Thay đổi một chỗ, toàn ứng dụng đều được cập nhật.</td>
+        </tr>
+      </table>
+
+      <h3>Vấn đề khi không component hoá</h3>
+      <p>Hình dung một trang web có navbar, sidebar, phần nội dung chính và footer. Nếu nhét tất cả vào một file layout, file đó sẽ:
+        cồng kềnh, khó đọc, khó bảo trì và không thể tái sử dụng từng phần.</p>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Nguyên tắc cốt lõi:</strong> mỗi component nên tự đủ nghĩa (self-contained) — đọc tên file là
+          biết ngay nó làm gì, không cần đọc toàn bộ code.</p>
+      </div>
+
+      <h3>Hai cơ chế của ASP.NET Core MVC</h3>
+      <p>ASP.NET Core MVC cung cấp hai cơ chế để component hoá giao diện:</p>
+      <ul>
+        <li><span class="tag">Partial View</span> — một file <code>.cshtml</code> được nhúng vào trong một view khác. Dữ liệu đến từ
+          view cha (parent view) truyền xuống.</li>
+        <li><span class="tag">View Component</span> — một lớp C# độc lập kết hợp với view riêng, tự xử lý logic và lấy dữ liệu của mình,
+          không phụ thuộc vào view cha.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 2 ============ -->
+    <section class="section" id="s2">
+      <h2><span class="num">2</span> Component hoá bằng Partial View</h2>
+      <p class="subvideo-meta">Bài 2 · <em>Componentize with Partial View</em></p>
+
+      <p>Một <strong>Partial View</strong> là một file <code>.cshtml</code> thông thường, nhưng nó được <em>nhúng</em> bên trong một
+        Razor view khác chứ không phản hồi trực tiếp HTTP request. Tên file partial thường bắt đầu bằng dấu gạch dưới
+        (<code>_TênFile.cshtml</code>) để phân biệt với full view.</p>
+
+      <h3>Ví dụ thực tế: tách Navbar ra khỏi Layout</h3>
+      <p>Thay vì viết toàn bộ HTML navbar trong <code>_Layout.cshtml</code>, ta tạo riêng <code>_Navbar.cshtml</code> trong thư mục
+        <code>Views/Shared/</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_Navbar.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;nav class="navbar navbar-expand-lg bg-body-tertiary"&gt;
+    &lt;div class="container-fluid"&gt;
+        &lt;a class="navbar-brand" href="#"&gt;Departments&lt;/a&gt;
+        &lt;div class="collapse navbar-collapse" id="navbarSupportedContent"&gt;
+            &lt;ul class="navbar-nav me-auto mb-2 mb-lg-0"&gt;
+                &lt;li class="nav-item"&gt;
+                    &lt;a class="nav-link" href="/"&gt;Home&lt;/a&gt;
+                &lt;/li&gt;
+                &lt;li class="nav-item"&gt;
+                    &lt;a class="nav-link" href="/departments"&gt;Departments&lt;/a&gt;
+                &lt;/li&gt;
+            &lt;/ul&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+&lt;/nav&gt;</code></pre>
+      </div>
+
+      <p>Trong <code>_Layout.cshtml</code>, thay khối HTML navbar bằng một dòng nhúng partial:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_Layout.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;html&gt;
+  &lt;head&gt;
+    &lt;title&gt;@ViewBag.Title&lt;/title&gt;
+    &lt;!-- Bootstrap CSS --&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    @await Html.PartialAsync("_Navbar")
+
+    &lt;div class="container"&gt;
+        @RenderSection("title_section", false)
+        @RenderBody()
+    &lt;/div&gt;
+    &lt;!-- Bootstrap JS --&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span><code>Html.PartialAsync("_Navbar")</code> tìm file <code>_Navbar.cshtml</code> theo thứ tự:
+          thư mục view hiện tại → <code>Views/Shared/</code>. Luôn dùng <code>await</code> để tránh deadlock.</p>
+      </div>
+
+      <h3>Khi nào đặt partial ở thư mục nào?</h3>
+      <ul>
+        <li><code>Views/Shared/</code> — partial dùng chung toàn ứng dụng (navbar, footer, searchbar…).</li>
+        <li><code>Views/[Controller]/</code> — partial chỉ dùng trong một controller nhất định.</li>
+      </ul>
+    </section>
+
+    <!-- ============ SECTION 3 ============ -->
+    <section class="section" id="s3">
+      <h2><span class="num">3</span> Truyền dữ liệu vào Partial View</h2>
+      <p class="subvideo-meta">Bài 3 · <em>Pass data to partial view</em></p>
+
+      <p>Một partial view có thể có <strong>model riêng</strong> giống như full view. View cha truyền model xuống thông qua tham số
+        thứ hai của <code>Html.PartialAsync</code>. Đây là cơ chế để tránh trùng lặp code.</p>
+
+      <h3>Bài toán: form Create và Edit dùng chung</h3>
+      <p>Trong ví dụ quản lý phòng ban (Departments CRUD), form tạo mới và form chỉnh sửa gần như giống hệt nhau.
+        Ta tạo partial <code>_DepartmentDetail.cshtml</code> để dùng ở cả hai nơi:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/_DepartmentDetail.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Department
+
+&lt;form method="post" action="/departments/@ViewBag.Action"&gt;
+
+    @if (ViewBag.Action == "edit")
+    {
+        &lt;input type="hidden" name="Id" value="@Model.Id" /&gt;
+    }
+
+    &lt;div class="row mb-3"&gt;
+        &lt;div class="col-2"&gt;
+            &lt;label class="col-form-label"&gt;Name&lt;/label&gt;
+        &lt;/div&gt;
+        &lt;div class="col-6"&gt;
+            &lt;input type="text" name="Name" value="@Model.Name" class="form-control" /&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class="row mb-3"&gt;
+        &lt;div class="col-2"&gt;
+            &lt;label class="col-form-label"&gt;Description&lt;/label&gt;
+        &lt;/div&gt;
+        &lt;div class="col-6"&gt;
+            &lt;input type="text" name="Description" value="@Model.Description" class="form-control" /&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;button type="submit" class="btn btn-primary"&gt;Save&lt;/button&gt;
+    &amp;nbsp;
+    &lt;a href="/departments" class="btn btn-secondary"&gt;Cancel&lt;/a&gt;
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <p>View <code>Create.cshtml</code> và <code>Details.cshtml</code> nhúng partial này, truyền model xuống:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Create.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Department
+
+@{
+    ViewBag.Title = "Create new department";
+    ViewBag.Action = "create";
+}
+
+@section title_section {
+    &lt;h3&gt;Add Department&lt;/h3&gt;
+}
+
+@await Html.PartialAsync("_DepartmentDetail", Model)</code></pre>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Details.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Department
+
+@{
+    ViewBag.Title = "Department Details";
+    ViewBag.Action = "edit";
+}
+
+@section title_section {
+    &lt;h3&gt;Department&lt;/h3&gt;
+}
+
+@await Html.PartialAsync("_DepartmentDetail", Model)
+
+&lt;form method="post" action="/departments/delete/@Model.Id"&gt;
+    &lt;button type="submit" class="btn btn-danger"&gt;Delete&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>ViewBag trong partial view:</strong> partial view có thể đọc <code>ViewBag</code> của view cha
+          (ví dụ <code>ViewBag.Action</code>), giúp điều chỉnh hành vi của partial mà không cần truyền thêm tham số riêng.</p>
+      </div>
+
+      <h3>Hai cách truyền model xuống partial</h3>
+      <table class="tbl">
+        <tr><th>Cú pháp</th><th>Khi nào dùng</th></tr>
+        <tr>
+          <td><code>@await Html.PartialAsync("_Partial", Model)</code></td>
+          <td>Truyền model cụ thể; partial dùng <code>@model T</code>.</td>
+        </tr>
+        <tr>
+          <td><code>@await Html.PartialAsync("_Partial")</code></td>
+          <td>Không truyền model; partial không cần dữ liệu động (chỉ HTML tĩnh).</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 4 ============ -->
+    <section class="section" id="s4">
+      <h2><span class="num">4</span> Bài tập 9 — Component hoá danh sách</h2>
+      <p class="subvideo-meta">Bài 4 · <em>Assignment 9 — Componentize a list</em></p>
+
+      <p>Đây là bài tập thực hành. Trước khi xem lời giải ở bài tiếp theo, hãy tự phân tích trang
+        <code>Departments/Index</code> và trả lời các câu hỏi sau:</p>
+
+      <ol class="steps">
+        <li><strong>Xác định các loại chức năng khác nhau</strong> có mặt trong trang danh sách phòng ban.
+          Gợi ý: nhìn vào phần hiển thị danh sách và từng hàng trong bảng.</li>
+        <li><strong>Đặt tên component</strong> cho từng chức năng theo nguyên tắc Single Responsibility
+          (mỗi component chỉ làm một việc).</li>
+        <li><strong>Tạo các Partial View</strong> tương ứng và cập nhật <code>Index.cshtml</code> để nhúng chúng vào.</li>
+        <li>Kiểm tra trang vẫn hiển thị đúng sau khi refactor.</li>
+      </ol>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Bài tập này thực hành <em>nested partial views</em> — partial view gọi lại một partial view khác bên trong.
+          Đây là pattern phổ biến trong dự án thực tế.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 5 ============ -->
+    <section class="section" id="s5">
+      <h2><span class="num">5</span> Bài tập 9 (lời giải) — Component hoá danh sách</h2>
+      <p class="subvideo-meta">Bài 5 · <em>Assignment 9 (answer) — Componentize a list</em></p>
+
+      <p>Trang <code>Index</code> của Departments có ba tầng chức năng:</p>
+
+      <table class="tbl">
+        <tr><th>Component</th><th>Trách nhiệm</th><th>File</th></tr>
+        <tr>
+          <td><strong>Page view</strong></td>
+          <td>Trang đầy đủ — tiêu đề, cấu trúc layout, nút Add</td>
+          <td><code>Index.cshtml</code> (full view)</td>
+        </tr>
+        <tr>
+          <td><strong>List component</strong></td>
+          <td>Lặp qua danh sách &amp; render từng item</td>
+          <td><code>_DepartmentList.cshtml</code></td>
+        </tr>
+        <tr>
+          <td><strong>Item component</strong></td>
+          <td>Render một hàng (row) trong bảng</td>
+          <td><code>_DepartmentListItem.cshtml</code></td>
+        </tr>
+      </table>
+
+      <h3>_DepartmentList.cshtml — partial danh sách</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/_DepartmentList.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model List&lt;Department&gt;
+
+@if (Model is not null &amp;&amp; Model.Count &gt; 0)
+{
+    @foreach (var department in Model)
+    {
+        @await Html.PartialAsync("_DepartmentListItem", department)
+    }
+}</code></pre>
+      </div>
+
+      <h3>_DepartmentListItem.cshtml — partial một hàng</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/_DepartmentListItem.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model Department
+
+@if (Model is not null)
+{
+    &lt;tr&gt;
+        &lt;td&gt;@Model.Name&lt;/td&gt;
+        &lt;td&gt;@Model.Description&lt;/td&gt;
+        &lt;td&gt;
+            &lt;a class="btn btn-link" href="/departments/details/@Model.Id"&gt;Edit&lt;/a&gt;
+        &lt;/td&gt;
+    &lt;/tr&gt;
+}</code></pre>
+      </div>
+
+      <h3>Index.cshtml — nhúng list partial</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model List&lt;Department&gt;
+
+@{
+    ViewBag.Title = "Departments";
+}
+
+@section title_section {
+    &lt;h3&gt;Departments&lt;/h3&gt;
+}
+
+@if (Model is not null &amp;&amp; Model.Count &gt; 0)
+{
+    &lt;table class="table table-striped"&gt;
+        &lt;thead&gt;
+            &lt;tr&gt;
+                &lt;th&gt;Name&lt;/th&gt;
+                &lt;th&gt;Description&lt;/th&gt;
+                &lt;th&gt;&lt;/th&gt;
+            &lt;/tr&gt;
+        &lt;/thead&gt;
+        &lt;tbody&gt;
+            @await Html.PartialAsync("_DepartmentList", Model)
+        &lt;/tbody&gt;
+    &lt;/table&gt;
+}
+
+&lt;br /&gt;
+&lt;a class="btn btn-primary" href="/departments/create"&gt;Add&lt;/a&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span><strong>Nested partial views:</strong> <code>Index.cshtml</code> gọi <code>_DepartmentList</code>,
+          và <code>_DepartmentList</code> gọi tiếp <code>_DepartmentListItem</code>. Cách lồng nhau này hoàn toàn hợp lệ và là
+          pattern tốt cho danh sách phức tạp.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 6 ============ -->
+    <section class="section" id="s6">
+      <h2><span class="num">6</span> Kết hợp Partial View &amp; JavaScript (Lý thuyết)</h2>
+      <p class="subvideo-meta">Bài 6 · <em>Combine Partial View and Javascript for Interactivity (Theory)</em></p>
+
+      <p>Mô hình request-response truyền thống của MVC có một hạn chế: mỗi lần người dùng tương tác (click tìm kiếm,
+        lọc dữ liệu…), trình duyệt phải gửi request và server phải trả về <em>toàn bộ</em> trang HTML mới. Điều này gây
+        trải nghiệm giật, chậm và không cần thiết.</p>
+
+      <h3>Giải pháp: Fetch API + Partial View</h3>
+      <p>Ý tưởng: thay vì tải lại cả trang, JavaScript dùng <strong>Fetch API</strong> gọi một endpoint riêng, endpoint đó
+        trả về <em>chỉ fragment HTML</em> (từ một Partial View), rồi JS chèn fragment đó vào đúng vị trí trên trang:</p>
+
+      <ol class="steps">
+        <li>Người dùng nhập từ khóa &amp; nhấn Search.</li>
+        <li>JavaScript gọi <code>fetch("/department-list/&lt;filter&gt;")</code> — không tải lại trang.</li>
+        <li>Server chạy action <code>SearchDepartments</code>, lọc dữ liệu, trả về <code>PartialView("_DepartmentList", data)</code>.</li>
+        <li>Response là HTML thuần (chỉ các hàng <code>&lt;tr&gt;</code>), không có layout hay header.</li>
+        <li>JavaScript nhận HTML, gán vào <code>innerHTML</code> của <code>&lt;tbody&gt;</code>.</li>
+      </ol>
+
+      <div class="callout key">
+        <p><span class="ico">🎯</span><strong>Điểm mấu chốt:</strong> controller action gọi <code>return PartialView(...)</code> thay vì
+          <code>return View(...)</code>. Khi đó ASP.NET Core render partial mà <strong>không</strong> bọc layout bên ngoài, trả về
+          fragment HTML gọn nhẹ.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 7 ============ -->
+    <section class="section" id="s7">
+      <h2><span class="num">7</span> Kết hợp Partial View &amp; JavaScript (Triển khai)</h2>
+      <p class="subvideo-meta">Bài 7 · <em>Combine Partial View and Javascript for Interactivity (Implementation)</em></p>
+
+      <p>Triển khai tính năng tìm kiếm phòng ban mà không tải lại trang, sử dụng Partial View + Fetch API.</p>
+
+      <h3>Bước 1 — Tạo Partial View cho thanh tìm kiếm</h3>
+      <p>Vì thanh tìm kiếm có thể dùng ở nhiều nơi, đặt nó trong <code>Views/Shared/</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/_SearchBar.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>&lt;div class="row"&gt;
+    &lt;div class="col-6"&gt;
+        &lt;div class="input-group mt-1 mb-1"&gt;
+            &lt;input id="search-filter" type="text"
+                   class="form-control" placeholder="Search" /&gt;
+            &lt;div class="input-group-append"&gt;
+                &lt;button id="search-button" class="btn btn-primary" type="button"&gt;
+                    Search
+                &lt;/button&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+&lt;/div&gt;</code></pre>
+      </div>
+
+      <h3>Bước 2 — Cập nhật Index.cshtml</h3>
+      <p><code>&lt;tbody&gt;</code> có <code>id="department-list"</code> để JavaScript có thể nhắm mục tiêu. Ban đầu bảng rỗng,
+        dữ liệu được nạp qua fetch:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    ViewBag.Title = "Departments";
+}
+
+@section title_section {
+    &lt;h3&gt;Departments&lt;/h3&gt;
+}
+
+@await Html.PartialAsync("_SearchBar")
+
+&lt;table class="table table-striped"&gt;
+    &lt;thead&gt;
+        &lt;tr&gt;
+            &lt;th&gt;Name&lt;/th&gt;
+            &lt;th&gt;Description&lt;/th&gt;
+            &lt;th&gt;&lt;/th&gt;
+        &lt;/tr&gt;
+    &lt;/thead&gt;
+    &lt;tbody id="department-list"&gt;
+        &lt;!-- dữ liệu được điền bằng JavaScript --&gt;
+    &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;br /&gt;
+&lt;a class="btn btn-primary" href="/departments/create"&gt;Add&lt;/a&gt;
+
+&lt;script&gt;
+    document.querySelector("#search-button").addEventListener("click", async () =&gt; {
+        var filter = document.querySelector("#search-filter").value;
+
+        var response = await fetch(`/department-list/${filter}`);
+        var departmentsHTML = await response.text();
+
+        document.querySelector("#department-list").innerHTML = departmentsHTML;
+    });
+&lt;/script&gt;</code></pre>
+      </div>
+
+      <h3>Bước 3 — Thêm action SearchDepartments vào Controller</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Controllers/DepartmentsController.cs</span><span class="lang">csharp</span></div>
+        <pre><code>[Route("/department-list/{filter?}")]
+public IActionResult SearchDepartments(string? filter)
+{
+    var departments = DepartmentsRepository.GetDepartments(filter);
+    return PartialView("_DepartmentList", departments);
+}</code></pre>
+      </div>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Lưu ý:</strong> action này trả về <code>PartialView</code>, không phải <code>View</code>.
+          Nếu trả về <code>View</code>, response sẽ bao gồm cả layout HTML đầy đủ, làm hỏng kết quả khi chèn vào <code>innerHTML</code>.</p>
+      </div>
+
+      <h3>Luồng hoạt động hoàn chỉnh</h3>
+      <ol class="steps">
+        <li>Trang Index load → <code>&lt;tbody&gt;</code> rỗng.</li>
+        <li>Người dùng nhập "HR" vào ô tìm kiếm, nhấn Search.</li>
+        <li>JS gọi <code>fetch("/department-list/HR")</code>.</li>
+        <li>Server trả về HTML các thẻ <code>&lt;tr&gt;</code> lọc theo "HR".</li>
+        <li>JS gán HTML vào <code>&lt;tbody id="department-list"&gt;</code>.</li>
+        <li>Trang cập nhật tức thì — <strong>không reload</strong>.</li>
+      </ol>
+    </section>
+
+    <!-- ============ SECTION 8 ============ -->
+    <section class="section" id="s8">
+      <h2><span class="num">8</span> View Component vs Partial View</h2>
+      <p class="subvideo-meta">Bài 8 · <em>ViewComponent vs PartialView</em></p>
+
+      <p>Partial View giải quyết tốt vấn đề <em>tách giao diện</em>, nhưng nó có một hạn chế quan trọng:
+        <strong>dữ liệu phải đến từ view cha</strong>. Partial View không tự lấy dữ liệu được.</p>
+
+      <h3>Hạn chế của Partial View</h3>
+      <p>Xem lại ví dụ <code>_DepartmentDetail.cshtml</code>: partial này nhận <code>Department</code> model từ
+        <code>Create.cshtml</code> hoặc <code>Details.cshtml</code>. Nếu muốn dùng partial này ở một trang khác,
+        <em>action của trang đó</em> phải lấy và truyền model Department xuống — dù trang đó không liên quan gì đến Department.</p>
+
+      <div class="callout warn">
+        <p><span class="ico">⚠️</span><strong>Vấn đề:</strong> khi một partial cần dữ liệu phức tạp (ví dụ: sidebar hiển thị thống kê,
+          widget thông báo…), mọi action ở mọi trang đều phải chuẩn bị dữ liệu đó — làm nặng controller và phá vỡ separation of concerns.</p>
+      </div>
+
+      <h3>Giải pháp: View Component</h3>
+      <p>View Component là component <em>tự chủ hoàn toàn</em>:</p>
+      <table class="tbl">
+        <tr><th>Tiêu chí</th><th>Partial View</th><th>View Component</th></tr>
+        <tr>
+          <td>Nguồn dữ liệu</td>
+          <td>Từ view cha truyền xuống</td>
+          <td>Tự lấy trong lớp C# riêng</td>
+        </tr>
+        <tr>
+          <td>Logic nghiệp vụ</td>
+          <td>Không có</td>
+          <td>Có — trong phương thức <code>Invoke()</code></td>
+        </tr>
+        <tr>
+          <td>Độ phụ thuộc</td>
+          <td>Phụ thuộc vào view cha</td>
+          <td>Hoàn toàn độc lập</td>
+        </tr>
+        <tr>
+          <td>Khi nào dùng</td>
+          <td>Tái sử dụng UI đơn giản, dữ liệu đã có sẵn</td>
+          <td>Widget phức tạp, cần tự lấy dữ liệu</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ============ SECTION 9 ============ -->
+    <section class="section" id="s9">
+      <h2><span class="num">9</span> Các thành phần cốt lõi của View Component</h2>
+      <p class="subvideo-meta">Bài 9 · <em>Essential parts of View Component</em></p>
+
+      <p>Một View Component gồm <strong>hai phần bắt buộc</strong>:</p>
+      <ol class="steps">
+        <li><strong>Lớp C# (ViewComponent class)</strong> — chứa logic nghiệp vụ, phương thức <code>Invoke()</code> trả về
+          <code>IViewComponentResult</code>.</li>
+        <li><strong>File Razor view</strong> — nằm ở đường dẫn cố định, tên mặc định là <code>Default.cshtml</code>.</li>
+      </ol>
+
+      <h3>Cấu trúc thư mục chuẩn</h3>
+      <pre><code>Views/
+  Shared/
+    Components/
+      DepartmentList/          ← tên component (không có hậu tố ViewComponent)
+        Default.cshtml         ← view của component
+        DepartmentListViewComponent.cs   ← class (có thể đặt ở thư mục gốc)</code></pre>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Class <code>DepartmentListViewComponent.cs</code> có thể đặt ở bất kỳ đâu trong project
+          (ví dụ: thư mục <code>ViewComponents/</code>). Vị trí trong ví dụ trên là để tiện quản lý cùng view tương ứng.</p>
+      </div>
+
+      <h3>Lớp ViewComponent</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/Components/DepartmentList/DepartmentListViewComponent.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Views.Shared.Components.DepartmentList
+{
+    [ViewComponent]
+    public class DepartmentListViewComponent : ViewComponent
+    {
+        public IViewComponentResult Invoke()
+        {
+            // Tự lấy dữ liệu — không phụ thuộc vào view cha
+            var departments = DepartmentsRepository.GetDepartments();
+            return View(departments);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Default.cshtml — view của component</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Shared/Components/DepartmentList/Default.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@model List&lt;Department&gt;
+
+@if (Model is not null &amp;&amp; Model.Count &gt; 0)
+{
+    @foreach (var department in Model)
+    {
+        @await Html.PartialAsync("_DepartmentListItem", department)
+    }
+}</code></pre>
+      </div>
+
+      <h3>Gọi View Component trong view</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    ViewBag.Title = "Departments";
+}
+
+@section title_section {
+    &lt;h3&gt;Departments&lt;/h3&gt;
+}
+
+&lt;table class="table table-striped"&gt;
+    &lt;thead&gt;
+        &lt;tr&gt;
+            &lt;th&gt;Name&lt;/th&gt;
+            &lt;th&gt;Description&lt;/th&gt;
+            &lt;th&gt;&lt;/th&gt;
+        &lt;/tr&gt;
+    &lt;/thead&gt;
+    &lt;tbody&gt;
+        @await Component.InvokeAsync("DepartmentList")
+    &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;a class="btn btn-primary" href="/departments/create"&gt;Add&lt;/a&gt;</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <p><span class="ico">💡</span>Cú pháp <code>@await Component.InvokeAsync("DepartmentList")</code> gọi View Component theo tên
+          (bỏ hậu tố <code>ViewComponent</code>). Ngoài ra, nếu import Tag Helper, có thể dùng cú pháp tag:
+          <code>&lt;vc:department-list /&gt;</code>.</p>
+      </div>
+    </section>
+
+    <!-- ============ SECTION 10 ============ -->
+    <section class="section" id="s10">
+      <h2><span class="num">10</span> Truyền tham số vào View Component</h2>
+      <p class="subvideo-meta">Bài 10 · <em>Pass parameters to ViewComponent</em></p>
+
+      <p>Một View Component hoàn toàn tự chủ nhưng vẫn có thể nhận tham số từ bên ngoài. Đây là cách làm cho component
+        linh hoạt: có thể dùng lại với những yêu cầu lọc/hiển thị khác nhau.</p>
+
+      <h3>Cập nhật lớp ViewComponent — nhận tham số filter</h3>
+      <div class="code">
+        <div class="code-head"><span class="fname">DepartmentListViewComponent.cs</span><span class="lang">csharp</span></div>
+        <pre><code>using Microsoft.AspNetCore.Mvc;
+using WebApp.Models;
+
+namespace WebApp.Views.Shared.Components.DepartmentList
+{
+    [ViewComponent]
+    public class DepartmentListViewComponent : ViewComponent
+    {
+        // Thêm tham số filter — có thể null (hiển thị tất cả)
+        public IViewComponentResult Invoke(string? filter)
+        {
+            var departments = DepartmentsRepository.GetDepartments(filter);
+            return View(departments);
+        }
+    }
+}</code></pre>
+      </div>
+
+      <h3>Truyền tham số khi gọi component</h3>
+      <p>Sử dụng anonymous object (tương tự route values) để truyền tham số:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Views/Departments/Index.cshtml</span><span class="lang">razor</span></div>
+        <pre><code>@{
+    ViewBag.Title = "Departments";
+}
+
+@section title_section {
+    &lt;h3&gt;Departments&lt;/h3&gt;
+}
+
+&lt;table class="table table-striped"&gt;
+    &lt;thead&gt;
+        &lt;tr&gt;
+            &lt;th&gt;Name&lt;/th&gt;
+            &lt;th&gt;Description&lt;/th&gt;
+            &lt;th&gt;&lt;/th&gt;
+        &lt;/tr&gt;
+    &lt;/thead&gt;
+    &lt;tbody id="department-list"&gt;
+        @* Truyền filter = null để lấy tất cả khi tải trang *@
+        @await Component.InvokeAsync("DepartmentList", new { filter = (string?)null })
+    &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;a class="btn btn-primary" href="/departments/create"&gt;Add&lt;/a&gt;</code></pre>
+      </div>
+
+      <h3>Dùng Tag Helper thay cho InvokeAsync</h3>
+      <p>Sau khi thêm <code>@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers</code> vào <code>_ViewImports.cshtml</code>,
+        có thể gọi View Component bằng tag HTML:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="fname">Cú pháp Tag Helper</span><span class="lang">razor</span></div>
+        <pre><code>&lt;!-- Không truyền tham số --&gt;
+&lt;vc:department-list /&gt;
+
+&lt;!-- Truyền tham số filter --&gt;
+&lt;vc:department-list filter="IT" /&gt;</code></pre>
+      </div>
+
+      <div class="callout note">
+        <p><span class="ico">ℹ️</span>Tên tag helper dùng kebab-case: <code>DepartmentList</code> → <code>vc:department-list</code>.
+          Đây là cú pháp sạch hơn, thân thiện với editor và dễ đọc hơn <code>InvokeAsync</code>.</p>
+      </div>
+
+      <h3>Tổng kết: chọn cơ chế phù hợp</h3>
+      <table class="tbl">
+        <tr><th>Tình huống</th><th>Dùng</th></tr>
+        <tr>
+          <td>Tách UI nhỏ, không cần dữ liệu riêng</td>
+          <td>Partial View (không model)</td>
+        </tr>
+        <tr>
+          <td>Tái sử dụng form/widget, dữ liệu truyền từ view cha</td>
+          <td>Partial View (có model)</td>
+        </tr>
+        <tr>
+          <td>Widget phức tạp, tự lấy dữ liệu, độc lập hoàn toàn</td>
+          <td>View Component</td>
+        </tr>
+        <tr>
+          <td>Cập nhật một phần trang mà không reload</td>
+          <td>Partial View + Fetch API (return PartialView)</td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- ============ PAGE NAV ============ -->
+    <nav class="page-nav">
+      <a class="prev" href="lesson-12.html">
+        <div class="dir">← Chương trước</div>
+        <div class="ttl">12 · MVC — Layout Views</div>
+      </a>
+      <a class="next" href="lesson-14.html">
+        <div class="dir">Chương sau →</div>
+        <div class="ttl">14 · Razor Pages</div>
+      </a>
+    </nav>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
